@@ -1,0 +1,21 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getPool } from "@/lib/intake/db";
+import { getBatchPreview } from "@/lib/intake/import";
+import { intakeErrorResponse } from "@/lib/intake/http";
+import { requireOperatorApi } from "@/lib/auth/guard";
+
+/** GET /api/imports/[id] — staged preview + summary (nothing committed). */
+export async function GET(
+  _req: NextRequest,
+  ctx: { params: Promise<{ id: string }> },
+): Promise<NextResponse> {
+  const auth = await requireOperatorApi(_req);
+  if (!auth.ok) return auth.response!;
+  const { id } = await ctx.params;
+  try {
+    const preview = await getBatchPreview(getPool(), id);
+    return NextResponse.json(preview, { status: 200 });
+  } catch (e) {
+    return intakeErrorResponse(e);
+  }
+}

@@ -1,0 +1,77 @@
+# MILESTONE 3: repeatable quality gates.
+#
+# No git remote exists yet, so this workflow has not executed on a provider —
+# every step below is validated locally in the milestone report (same commands,
+# same order, same failure semantics: any failing step fails the run).
+# Connect a remote and push to execute it for real; no step needs secrets.
+#
+# Database safety: tests run against an explicit scratch database
+# (agency_intel_ci) created by the job itself. Every suite refuses
+# non-loopback hosts, so a misconfigured URL fails closed instead of
+# touching anything else.
+
+name: quality-gates
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agency_intel_ci
+        ports:
+          - 127.0.0.1:5434:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d agency_intel_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5434/agency_intel_ci
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5434/agency_intel_ci
+      TEST_NOACCESS_URL: postgresql://noaccess:noaccess-local-only@127.0.0.1:5434/agency_intel_ci
+      APP_NOACCESS_USER: noaccess
+      APP_NOACCESS_PASSWORD: noaccess-local-only
+      OPERATOR_EMAIL: ci-operator@example.com
+      # Plain $ separators here (NOT \$ escaped): GitHub Actions passes env
+      # values literally, while Next.js expands $VAR only inside .env FILES.
+      # Escaping here would break the shape check and fail closed.
+      # Shape-valid but random 64-byte key: NO password verifies against it,
+      # so interactive login in CI always fails closed (401). The Vitest
+      # suites provision their own in-process credentials and are unaffected.
+      # Never replace this with a real credential.
+      OPERATOR_PASSWORD_HASH: scrypt$16384$8$1$Y2ktY2ktc2FsdC12ZXJ5LWxvbmctYW5kLXJhbmRvbQ==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+      OPERATOR_API_TOKEN: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install from lockfile
+        run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Bootstrap scratch database (creates DB + noaccess role)
+        run: node scripts/db.mjs bootstrap
+      - name: Migrate scratch database
+        run: node scripts/db.mjs migrate
+      - name: Seed twice (idempotency)
+        run: |
+          node scripts/db.mjs seed
+          node scripts/db.mjs seed
+      - name: SQL verification suite
+        run: node scripts/db.mjs verify
+      - name: Full Vitest suite
+        run: npx vitest run
+      - name: Production build
+        run: npm run build

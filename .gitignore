@@ -1,0 +1,17 @@
+# AUTH-001: real secrets must never be committed.
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+operator-credential*.txt
+# Build / runtime (never committed).
+node_modules/
+.next/
+out/
+# Local operator tooling scratch.
+.tmp/
+# Backups may contain database dumps with business data.
+backups/
+# TypeScript build cache
+*.tsbuildinfo

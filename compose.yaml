@@ -1,0 +1,29 @@
+# Grayscales BI — local PostgreSQL (Docker). No Supabase, no remote.
+# Secrets live in .env (local-only defaults below); never commit real passwords.
+services:
+  postgres:
+    image: "postgres:17.11"
+    container_name: grayscales-pg
+    # MILESTONE 3: survive Docker/host restarts without operator action.
+    # postgres handles SIGTERM with a fast checkpointed shutdown, so an
+    # automatic restart cannot corrupt data; the pg_isready healthcheck below
+    # still gates dependents. Local-only binding is unchanged.
+    restart: "unless-stopped"
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+      POSTGRES_DB: "${POSTGRES_DB:-agency_intel}"
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - "pgdata:/var/lib/postgresql/data"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-agency_intel}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  pgdata:
+    name: grayscales-pgdata
