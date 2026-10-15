@@ -4,7 +4,7 @@ import { safeNextPath } from "@/lib/auth/http";
 import { SESSION_COOKIE, validateSession } from "@/lib/auth/sessions";
 import { getPool } from "@/lib/intake/db";
 import { cookies } from "next/headers";
-import { LoginForm } from "@/components/login-form";
+import { CreativeLoginForm } from "@/components/creative-login-form";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +14,13 @@ export const metadata = {
 };
 
 /**
- * GET /login — PUBLIC. Renders the operator sign-in form. Already-signed-in
- * operators are sent to their validated return path (or home). The `next`
- * parameter is validated server-side (open-redirect guard) before rendering.
+ * GET /login — PUBLIC. The app's front door: this is where every unauthenticated
+ * request is redirected (middleware), so the creative operator form is the first
+ * thing an operator sees and the dashboard is reachable only after a successful
+ * server-side credential check.
+ *
+ * `next` is validated server-side (open-redirect guard) before it is used, and
+ * an already-signed-in operator is sent straight to it.
  */
 export default async function LoginPage({
   searchParams,
@@ -39,18 +43,18 @@ export default async function LoginPage({
     }
   }
   return (
-    <div className="mx-auto flex min-h-[60vh] w-full max-w-md flex-col items-center justify-center gap-4 px-4 py-10">
-      <div className="text-center">
+    <div className="creative-login-page">
+      <div className="creative-login-header">
         <p className="text-sm font-bold text-slate-900">
           Grayscales <span className="font-normal text-slate-500">Intel</span>
         </p>
         <h1 className="mt-1 text-xl font-semibold text-slate-900">Operator sign in</h1>
+        <p className="mt-1 text-xs text-slate-500">
+          Sign in to reach the dashboard. Failed attempts never reveal whether an
+          account exists.
+        </p>
       </div>
-      <LoginForm next={next} />
-      <p className="max-w-md text-center text-xs text-slate-500">
-        Local-only internal tool. If you reached this page unexpectedly, do not
-        enter credentials — contact the tool owner.
-      </p>
+      <CreativeLoginForm next={next} />
     </div>
   );
 }

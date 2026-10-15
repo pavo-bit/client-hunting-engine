@@ -56,7 +56,7 @@ vs n≥30). Verdict for internal use: the tool demonstrably converts public
 evidence into reviewable opportunities with honest uncertainty. NO claim of
 revenue, conversion, or predictive power — none evidenced.
 
-## 5. Performance (frozen 50-project target)
+## 5. Performance (frozen 50-project-record scale)
 
 M3 measurements stand (code paths unchanged): reads <100 ms medians;
 500-row import ~12 s (< 60 s NFR ✓); 5000-row ~2 min with root-caused
@@ -73,7 +73,7 @@ approved requirement blocked; target frozen at 50, no 100/250/500 work).
 | 4 | Backup & recovery guarantees | **CONDITIONAL** | Local backup/restore proven + timed; off-host DR absent by environment |
 | 5 | Observability & incident response | **CONDITIONAL** | Health/IDs/redacted logs/runbook proven; metrics + alerting manual-only |
 | 6 | CI & repeatable builds | **CONDITIONAL** | Definition + local full validation (both DB paths); provider run unverified |
-| 7 | Performance at approved capacity | **PASS** | NFR holds; 50-project target met with headroom; limits documented |
+| 7 | Performance at approved capacity | **PASS** | NFR holds; 50-project-record scale met with headroom; limits documented |
 | 8 | Real-world opportunity quality | **CONDITIONAL** | Pilot trustworthy but non-sign-off; calibration far off; no predictive claims |
 | 9 | Outreach & data-access restrictions | **PASS** | No-send re-proven by suite scan; permitted-sources-only; fetches honor failures |
 | 10 | Deployment config & network exposure | **PASS (local-only)** / external **NOT AUTHORIZED** | Loopback bindings, boot gate, checklist; exposure blocked on gates 3,4,6 + T-014 |

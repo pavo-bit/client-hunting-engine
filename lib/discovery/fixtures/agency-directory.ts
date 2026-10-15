@@ -125,7 +125,11 @@ export class AgencyDirectoryFixture implements SourceAdapter {
         "no network access; no live data",
         "not registered in production code",
       ],
-      accessRequirements: "none — local fixture, no credentials",
+      accessRequirements: "none - local fixture, no credentials",
+      // Synthetic stand-in for the agency-directory source (S-05). The
+      // registry row is what authorizes the run; the fixture adds no
+      // permission of its own (amendment §4F).
+      sourceKey: "agency-directory",
       maxPageSize: 25,
     };
   }

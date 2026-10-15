@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/intake/db";
 import { requireOperatorApi } from "@/lib/auth/guard";
+import { listIdentityConflicts } from "@/lib/resolve/conflicts";
 
 /** GET /api/discovery/runs/[id] — run detail + per-record items (read-only). */
 export async function GET(
@@ -10,6 +11,13 @@ export async function GET(
   const auth = await requireOperatorApi(_req);
   if (!auth.ok) return auth.response!;
   const { id } = await ctx.params;
+  // Invalid uuid => clean 422, never a raw database error as 500.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    return NextResponse.json(
+      { code: "bad_id", message: "run id must be a uuid" },
+      { status: 422 },
+    );
+  }
   try {
     const pool = getPool();
     const run = await pool.query(
@@ -29,7 +37,13 @@ export async function GET(
        from public.discovery_run_item where run_id = $1 order by created_at limit 500`,
       [id],
     );
-    return NextResponse.json({ run: run.rows[0], items: items.rows }, { status: 200 });
+    // Identity conflicts captured for this run (M7). Read-only projection:
+    // they are review artifacts, not merges.
+    const conflicts = await listIdentityConflicts(pool, { runId: id, limit: 200 });
+    return NextResponse.json(
+      { run: run.rows[0], items: items.rows, identity_conflicts: conflicts },
+      { status: 200 },
+    );
   } catch {
     return NextResponse.json(
       { code: "internal", message: "internal error" },

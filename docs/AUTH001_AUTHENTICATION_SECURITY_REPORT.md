@@ -173,3 +173,92 @@ nothing to audit — stated so it is not assumed checked).
 ## 8. Local-only confirmation
 
 `compose.yaml` still binds `127.0.0.1:${POSTGRES_PORT}:5432`; the app server was exercised only on `127.0.0.1:3101`; `DATABASE_URL`/`TEST_DATABASE_URL` refuse non-loopback hosts (in `scripts/db.mjs`, and every test asserts loopback before connecting); no port was opened publicly, no cloud resource provisioned, no remote endpoint contacted (the only network calls in tests are the pre-existing opt-in GLEIF live smoke, skipped by default). The shell banner now reads "local-only build, do not expose publicly" with sign-in state.
+
+---
+
+## 9. Addendum (2026-10-14) — creative sign-in page integrated
+
+The owner supplied a creative login form (`Creative Login Form/`, the GSAP
+demo) and asked for it to be the app's front door. Integrated as
+`components/creative-login-form.tsx` + `public/creative-login/`.
+
+**Security posture unchanged — the UI is not the authenticator:**
+
+- The form has no password logic of its own. It POSTs `{email, password, next}`
+  to the unchanged `POST /api/auth/login`; the server verifies the scrypt hash,
+  enforces the per-key login rate limit, and issues the session cookie.
+- The demo's CDN `<script src="https://unpkg.com/gsap@3/...">` was **removed**.
+  GSAP is now a pinned local dependency (`gsap@3.13.0`, exact version, in
+  `package.json`), so the login page renders and animates offline and no remote
+  code executes on the app's origin. `script.js` and `style.css` are
+  byte-identical copies of the demo (SHA-256 verified, see
+  `public/creative-login/PROVENANCE.md`).
+- No credential exists in client code. `tests/creative_login.test.ts` asserts
+  this (no hash-shaped literal, no client-side password comparison, no e-mail
+  literal) and would fail the build if one were added.
+- Preserved: generic failure message (no account-enumeration oracle), password
+  field cleared on failure, `?next=` open-redirect guard, CSRF origin check,
+  session rotation on login, `Secure`/`HttpOnly`/`SameSite=Lax` cookie flags,
+  and every-page gating (`/login` is the only public page; asserted by test).
+- Accessibility added to the demo's placeholder-only markup: real labels,
+  `autocomplete` attributes, `aria-busy` on submit, `role="alert"` for errors,
+  and Enter-to-submit. The animation can no longer trap the operator: the
+  submit button is always operable regardless of animation state (the demo
+  originally hid it behind its own counters).
+- `/login` remains the only public route; the demo folder itself is inert (no
+  app code references it, asserted by test) and is kept as the owner's original.
+
+Verified: full suite 32 files / 360 passed / 1 skipped, `tsc` clean, production
+build clean, and a real browser sign-in (wrong password → generic error, correct
+credential → dashboard) against `next start` on 127.0.0.1:3101.
+
+### 9.1 Addendum follow-ups (same day) — standalone page + a real gate defect
+
+**1. `/login` is now a standalone page.** It previously rendered inside the
+dashboard shell (sidebar, search bar, section footer), which put dashboard
+navigation in front of an unauthenticated visitor. `components/shell.tsx` now
+returns a minimal frame for `/login` — security notice + children only — and the
+dashboard chrome appears after sign-in. Pinned by
+`tests/creative_login.test.ts` ("no dashboard chrome around the sign-in form").
+
+**2. Real gate defect found while verifying, now fixed.** An unauthenticated
+`GET /agencies` returned **200** instead of 307, while every other gated route
+returned 307. Cause: `app/agencies/loading.tsx`. A loading boundary makes Next
+stream the shell with status 200 *before* the page's `redirect()` executes, so
+non-browser clients (curl, scanners, uptime checks) saw 200 + a skeleton.
+
+- Data exposure: **none** — the streamed body contained no agency rows (verified:
+  the real directory data was absent; the browser was redirected to /login as
+  normal). This was a status-code/consistency defect, not a leak.
+- Fix: removed `app/agencies/loading.tsx` (the only loading boundary in the
+  app). The redirect now runs before any streaming: all gated routes answer 307
+  when signed out, verified over HTTP against `next start`.
+- Prevention: `tests/creative_login.test.ts` fails if any `loading.tsx` is
+  reintroduced under `app/`.
+- Cost accepted: the directory page loses its skeleton while loading (it was the
+  only page that had one).
+
+### 9.2 Addendum follow-up — animation activation + scene size (owner request)
+
+Two presentation changes, zero security change:
+
+1. **Submit animation now starts on the e-mail.** The demo only spun its gear
+   train (which drives the spray that reveals the submit button) when its
+   optional "name" field looked filled, so an operator typing e-mail + password
+   never saw the button animate. `public/creative-login/activate-on-email.js`
+   (our file, documented in that folder's PROVENANCE.md) drives the demo's own
+   `gearsTls` timelines from the e-mail field. `script.js` remains byte-identical
+   to the owner's original (SHA-256 asserted by test). The adapter contains no
+   `fetch`, no API path and no credential — it only moves artwork (asserted by
+   test).
+2. **Scene 50% larger, letters unchanged.** `SCENE_BOOST = 1.5` multiplies the
+   single stage scale, so artwork, cords and input boxes all grow together and
+   the cord geometry stays aligned. The form's `font-size` is divided back out
+   by `--creative-inverse-boost` in `app/globals.css`, so words remain 15 px on
+   screen. No element was repositioned by hand.
+
+Verified in the browser: typing a valid e-mail spins the gears and swings the
+submit button into place (submit colour goes from transparent to solid);
+sign-in still works (wrong credential → generic error, correct credential →
+dashboard). Full suite 32 files / 364 passed / 1 skipped, tsc clean, production
+build clean.

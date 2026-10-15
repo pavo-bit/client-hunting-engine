@@ -10,7 +10,7 @@
 - [x] Data integrity + audit provenance green (verify + 300 tests).
 - [x] Backup/restore proven locally with timing.
 - [x] Health, request IDs, redacted logs, runbook executable.
-- [x] Performance within approved capacity (50 projects).
+- [x] Performance within approved capacity (50 project records — the performance reference scale, not the separate 50-opportunities-per-refresh discovery target).
 - [x] Pilot shows genuine utility with honest uncertainty.
 - [x] No-send + permitted-sources boundaries hold.
 - Limits: single operator, loopback only, provisional policies, manual

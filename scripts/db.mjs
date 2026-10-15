@@ -73,6 +73,22 @@ async function bootstrap(target) {
     await admin.query(`alter role ${role} with password ${qlit(pw)} login`);
     await admin.query(`grant connect on database "${dbName.replace(/"/g, "")}" to ${role}`);
     console.log(`role ${role} ready (CONNECT only, no table grants)`);
+
+    // Phase 2 principal. Same treatment as `noaccess`: a LOGIN role that holds
+    // NO table grants until migration M10 grants it exactly the approved
+    // qualification view and the two scoped consumption functions. Created
+    // here (not in a migration) because role creation is a cluster operation,
+    // not a schema change.
+    const p2 = process.env.APP_P2_USER ?? "p2_app";
+    const p2pw = process.env.APP_P2_PASSWORD ?? "p2-app-local-only";
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(p2)) throw new Error("bad phase-2 role name");
+    await admin.query(
+      `do $$ begin if not exists (select from pg_roles where rolname = ${qlit(p2)}) then ` +
+        `create role ${p2} login; end if; end $$;`,
+    );
+    await admin.query(`alter role ${p2} with password ${qlit(p2pw)} login`);
+    await admin.query(`grant connect on database "${dbName.replace(/"/g, "")}" to ${p2}`);
+    console.log(`role ${p2} ready (CONNECT only; grants come from migration M10)`);
   } finally {
     await admin.end();
   }

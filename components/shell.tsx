@@ -105,6 +105,30 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   const onLoginPage = pathname === "/login";
 
+  // The sign-in page is a SEPARATE page, not a dashboard screen: no sidebar,
+  // no search bar, no section footer. The operator meets one form first and
+  // enters the dashboard only after the server accepts the credential. Only
+  // the security notice is shared, because it applies to both.
+  if (onLoginPage) {
+    return (
+      <div className="min-h-screen bg-slate-100 text-slate-900">
+        <div
+          role="note"
+          className="flex items-center justify-center gap-2 bg-amber-100 px-4 py-1.5 text-xs text-amber-900"
+        >
+          <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />
+          <span>
+            Local internal tool — sign in to continue. Trusted local use only; do
+            not expose publicly.
+          </span>
+        </div>
+        <main id="main" className="min-h-[calc(100vh-2rem)]">
+          {children}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <div

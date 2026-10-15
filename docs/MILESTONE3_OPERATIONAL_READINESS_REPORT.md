@@ -15,7 +15,7 @@
 | Logging | No server-side logging at all (zero secret-leak surface, zero observability); one client-side `console.error` in `app/error.tsx` (browser console, Next-sanitized errors) | Structured logs, latency/error-rate visibility |
 | CI | None (no `.github/`, no git repo at all) | Minimal CI definition + local validation of every step |
 | Deps | `package-lock.json` present; vitest 3.0.5, next 15.5.27 | Audit findings below |
-| Perf | No measurements exist | Benchmarks at seed scale; 50-project target preserved (frozen) |
+| Perf | No measurements exist | Benchmarks at seed scale; 50-project-record scale preserved (frozen) |
 
 **Dependency audit (executed `npm audit`, npm registry metadata):**
 
@@ -36,7 +36,7 @@ Suite baseline at start: **21 files / 286 passed / 1 skipped** (from Milestone 2
 | S-4 | Dependency audit (upgrade only with evidence) | §4 |
 | S-5 | Minimal CI definition + local validation of every step | §5 |
 | S-6 | Failure drills (real where safe; disk-exhaustion excluded) | §6 |
-| S-7 | Measured benchmarks at seed + 50-project scale; optimize only with evidence | §7 |
+| S-7 | Measured benchmarks at seed + 50-project-record scale; optimize only with evidence | §7 |
 | S-8 | Runbook + backup/restore doc + release checklist + this report | §8 |
 
 Out of scope (unchanged): public deploy, cloud, architecture redesign,
@@ -123,11 +123,11 @@ bootstrap step; wrong `$`-escaping advice for Actions env).
 | `rankedOpportunities` | ~19 ms |
 | `getBriefWorkspace` | ~18 ms |
 | `previewImport` 5000 rows | 13.8 s |
-| `confirmImport` 5000 rows | **117.7 s** (~23 ms/row; per-row peer scan → quadratic — root-caused, NOT optimized: 500-row NFR holds at ~12 s < 60 s; 5000 completes correctly; 50-project target frozen) |
+| `confirmImport` 5000 rows | **117.7 s** (~23 ms/row; per-row peer scan → quadratic — root-caused, NOT optimized: 500-row NFR holds at ~12 s < 60 s; 5000 completes correctly; 50-project-record scale frozen) |
 | 10 parallel `createCompany` | 144 ms total, no conflicts |
 | Company-search plan | Seq Scan at 67 rows — correct at this scale; GIN trgm indexes in place for growth |
 
-No bottleneck at the frozen 50-project target; no optimization applied (per
+No bottleneck at the frozen 50-project-record scale; no optimization applied (per
 milestone discipline). Probe file deleted after recording; numbers above are
 the record.
 

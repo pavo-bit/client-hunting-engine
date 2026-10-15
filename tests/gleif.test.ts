@@ -337,7 +337,35 @@ describe("discovery runs (persistence + identity handoff)", () => {
       actor: "t6test",
     });
     expect(res.counts).toMatchObject({ found: 1, conflicts: 1, new: 0 });
-    expect(res.items[0].candidateId).not.toBeNull();
+    // candidate_id is deliberately NULL: the conflicting entity must NOT
+    // become a company row (that would pre-decide a merge), so there is no
+    // match_candidate to point at. What must exist instead is the captured
+    // identity_conflict review row - until M7 the observation was dropped.
+    expect(res.items[0].candidateId).toBeNull();
+    expect(res.items[0].note).toMatch(/identity conflict .* recorded for human review/);
+    const cc = await pool.connect();
+    try {
+      const conflicts = await cc.query(
+        `select c.company_id, c.rule, c.status, c.observed_name, c.observed_registry_id
+         from public.identity_conflict c where c.run_id = $1`,
+        [res.runId],
+      );
+      expect(conflicts.rows).toHaveLength(1);
+      expect(conflicts.rows[0]).toMatchObject({
+        company_id: existing.companyId,
+        rule: "registry_scoped",
+        status: "pending",
+        observed_name: "KOTZILLA",
+        observed_registry_id: "98450079C9148C2F5B36",
+      });
+      // Zero merge semantics: the capture created no company and merged nothing.
+      const companies = await cc.query(
+        "select count(*)::int as n from public.company where registry_id = '98450079C9148C2F5B36'",
+      );
+      expect(companies.rows[0].n).toBe(1);
+    } finally {
+      cc.release();
+    }
     // Established record untouched (name + domain intact, still canonical).
     const c = await pool.connect();
     try {

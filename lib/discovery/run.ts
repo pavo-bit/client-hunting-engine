@@ -13,8 +13,11 @@ import type { Pool } from "pg";
 import { createCompany } from "../intake/import";
 import { validateCompanyInput } from "../intake/validate";
 import { findCandidates } from "../resolve/engine";
+import { recordIdentityConflict } from "../resolve/conflicts";
+import type { ConflictRule } from "../resolve/conflicts";
 import { ingestObservation } from "../evidence/ingest";
 import type { AdapterRegistry } from "./registry";
+import { assertSourceEnabled } from "./sources";
 import type { NormalizedDiscovery, RawRecord } from "./types";
 
 export const SOURCE_KEY = "gleif-api";
@@ -90,6 +93,10 @@ export async function runDiscovery(
   const maxPages = Math.min(Math.max(opts.maxPages ?? 3, 1), 3);
 
   const manifest = registry.get(opts.adapterId).manifest();
+  // B-D5 / amendment §4F: the source registry is the permission gate. Refuse
+  // BEFORE any write so a disabled-source run leaves no partial history.
+  const sourceKey = manifest.sourceKey ?? SOURCE_KEY;
+  await assertSourceEnabled(pool, sourceKey);
   const started = await pool.query(
     `insert into public.discovery_run
        (adapter_id, adapter_version, status, query_text, created_by)
@@ -112,13 +119,24 @@ export async function runDiscovery(
         counts.skipped, counts.conflicts, counts.failed, error,
       ],
     );
+    // Map to the DECLARED RunItemResult shape. A bare `as RunItemResult[]`
+    // cast on pg rows is a lie: pg returns snake_case, so every consumer
+    // reading companyId/sourceRecordId saw undefined. Silent-data-loss class
+    // of bug - the type is the contract, so the mapping is explicit.
     const items = (
       await pool.query(
         `select source_record_id, status, company_id, candidate_id, warnings, note
          from public.discovery_run_item where run_id = $1 order by created_at`,
         [runId],
       )
-    ).rows as RunItemResult[];
+    ).rows.map((r) => ({
+      sourceRecordId: r.source_record_id as string,
+      status: r.status as RunItemResult["status"],
+      companyId: (r.company_id as string | null) ?? null,
+      candidateId: (r.candidate_id as string | null) ?? null,
+      warnings: (r.warnings as string[]) ?? [],
+      note: (r.note as string | null) ?? null,
+    } satisfies RunItemResult));
     return { runId, status, counts: { ...counts }, items, error };
   };
 
@@ -213,7 +231,7 @@ export async function runDiscovery(
     const seen = await pool.query(
       `select company_id from public.discovery_record
        where source_key = $1 and source_record_id = $2 limit 1`,
-      [SOURCE_KEY, sid],
+      [sourceKey, sid],
     );
     if (seen.rows.length > 0) {
       await recordItem(sid, "duplicate", {
@@ -239,7 +257,7 @@ export async function runDiscovery(
     }
     try {
       const created = await createCompany(pool, toIntakeInput(normalized), opts.actor, {
-        sourceKey: SOURCE_KEY,
+        sourceKey,
         collectionMethod: "api",
         sourceRecordId: sid,
         note: `discovery run ${runId} (${manifest.id} v${manifest.version})`,
@@ -255,7 +273,7 @@ export async function runDiscovery(
             pool,
             {
               companyId: created.companyId,
-              sourceKey: SOURCE_KEY,
+              sourceKey,
               url: normalized.sourceUrl,
               excerpt: [
                 `LEI ${normalized.registryId ?? "unknown"}: ${normalized.name}`,
@@ -289,7 +307,7 @@ export async function runDiscovery(
       if (status === 409) {
         // Canonical unique hit: route through identity resolution (review).
         try {
-          const res = await findCandidatesByIdentity(normalized);
+          const res = await findCandidatesByIdentity(normalized, sid);
           await recordItem(sid, "conflict", {
             candidateId: res.candidateId,
             warnings: normalized.warnings,
@@ -316,11 +334,17 @@ export async function runDiscovery(
 
   async function findCandidatesByIdentity(
     n: NormalizedDiscovery,
+    sourceRecordId: string,
   ): Promise<{ candidateId: string | null; note: string }> {
-    // Locate the conflicting canonical record deterministically, then run
-    // the standard resolution (same rules, same queue, no auto-merge here:
-    // auto-merge only fires inside findCandidates for domain-exact pairs —
-    // NOTE: this path intentionally disables it; conflicts stay human).
+    // Locate the conflicting canonical record deterministically, then CAPTURE
+    // what the source claimed as an identity_conflict review row (M7).
+    //
+    // Why not findCandidates: the conflicting entity must not exist as a
+    // company (creating it would pre-decide a merge, D-011), and match_candidate
+    // needs two company rows. Asking for candidates of the existing record
+    // therefore finds nothing - which silently dropped the observation's
+    // identity attributes. Zero merge semantics either way: nothing here writes
+    // merged_into.
     const hit = await pool.query(
       `select id from public.company where merged_into is null and (
          ($1::text is not null and domain_norm = $1) or
@@ -331,16 +355,31 @@ export async function runDiscovery(
     );
     if (hit.rows.length === 0)
       return { candidateId: null, note: "conflicts with an existing record (not located)" };
-    const res = await findCandidates(pool, hit.rows[0].id as string, {
-      actor: opts.actor,
-      autoMerge: false,
+    const registryScoped =
+      (n.registryId ?? "").length > 0 && (n.countryCode ?? "").length > 0;
+    const rule: ConflictRule = registryScoped ? "registry_scoped" : "domain_exact";
+    const detail = registryScoped
+      ? `registry ${n.registryId} already registered for ${n.countryCode} under a different record`
+      : `domain ${n.domain ?? "unknown"} already registered under a different record`;
+    const { conflict, created } = await recordIdentityConflict(pool, {
+      runId,
+      sourceRecordId,
+      companyId: hit.rows[0].id as string,
+      rule,
+      detail,
+      observedName: n.name,
+      observedDomain: n.domain ?? null,
+      observedRegistryId: n.registryId ?? null,
+      observedCountryCode: n.countryCode ?? null,
     });
-    const first = res.candidates[0];
     return {
-      candidateId: first?.id ?? null,
-      note: first
-        ? `queued for review (${first.rule}): ${first.detail}`
-        : "no candidate generated; kept separate",
+      // candidate_id stays NULL on purpose: it references match_candidate, and
+      // this is not one. The conflict id is reported in the note.
+      candidateId: null,
+      note:
+        `identity conflict ${conflict.id} (${rule}) recorded for human review` +
+        (created ? "" : " — already captured for this record") +
+        `: ${detail}`,
     };
   }
 }

@@ -32,6 +32,67 @@ node scripts/db.mjs verify                      # T-002 assertion suite (dev)
 Migration count is asserted by `tests/seed.test.ts` (`MIGRATION_COUNT`) —
 bump it when adding a migration. Never edit applied migrations; add new ones.
 
+**Pristine end-to-end check (never run destructive checks against dev).**
+`verify` needs a migrated AND seeded database. Prove that path on an isolated
+scratch database — `db.mjs` loads `.env` only for variables that are unset, so
+an explicit `DATABASE_URL` override redirects every command:
+
+```powershell
+$env:DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:5434/agency_intel_scratch'
+node scripts/db.mjs bootstrap; node scripts/db.mjs migrate
+node scripts/db.mjs seed;      node scripts/db.mjs verify
+Remove-Item Env:\DATABASE_URL
+```
+
+Dev and test databases are untouched by this. The test database is
+**migrate-only** (suites build their own fixtures and must not inherit seed
+rows), so `verify --target test` is expected to fail and that is not a defect.
+
+## 2b. Phase 2 consumption (explicit operator commands only)
+
+There is no scheduler, watcher or background job for Phase 2 — nothing in the
+repository invokes these except an explicit operator command:
+
+```powershell
+node scripts/qualify.mjs status --consumer <name> [--target test]
+node scripts/qualify.mjs consume --consumer <name> [--batch N] [--target test]
+node scripts/qualify.mjs backfill [--pipeline agency_partner] [--target test]
+node scripts/qualify.mjs reconcile [--target test]
+node scripts/qualify.mjs run-all --consumer <name> [--idempotency-key K] [--target test]
+node scripts/qualify.mjs replay --case <case-uuid> [--target test]
+node scripts/qualify.mjs assess --opportunity <uuid> [--policy V --catalog V --rubric V --capacity V --as-of ISO --answers JSON --idempotency-key K] [--target test]
+```
+
+`assess` resolves omitted versions to the ACTIVE version of each kind and
+refuses (never invents) when none is active. Writes require `--actor`
+(defaults to your own `OPERATOR_EMAIL`, never a
+guess). Read the JSON report before deciding anything: `drifted` means
+Discovery moved under a case (investigate, do not re-run blindly);
+`orphaned` means the opportunity left the view (the case is kept — you
+decide). Contracts: `docs/DISCOVERY_PHASE2_INTERFACE_SPEC.md`,
+`docs/PHASE2_EVENT_CONTRACT.md`, `docs/PHASE2_SCHEMA.md`,
+`docs/QUALIFICATION_API_CONTRACTS.md`.
+
+## 2c. Qualification review (operator workflow)
+
+- Queue: `/qualification` (filters, pursuit order, suppressed hidden by
+  default — append `?suppressed=true` to audit them). Missing scores show
+  "—", never zero.
+- Case: `/qualification/cases/<case_id>` — identity, dimensions, evidence
+  for/against, assessments, rank history, research, decisions, audit. Record
+  accept/reject/defer/withdraw there (reasons required; stale assessments
+  refuse accept/defer — re-run first).
+- Assess: `/qualification/assess` — explicit runs with named versions.
+- Research: `/qualification/research` — decision-value ordered questions;
+  status moves, due flags and notes per task.
+- Policy: `/qualification/policy` — versions, lint/draft/publish/retire,
+  capacity profiles. Drafts never affect rankings.
+- Metrics: `/qualification/audit` — decisions, gate outcomes, staleness,
+  drift, research load, evaluation pointers.
+- Today: `/today` — priorities, attention items, health warnings.
+- Admin: `/admin` — reconciliation triggers, consumer health, migrations,
+  backups. Backup/restore stay terminal commands (see §3).
+
 ## 3. Backups & recovery
 
 Full procedure: `docs/DATABASE_BACKUP_RESTORE.md`. Short version:
@@ -64,6 +125,36 @@ node scripts/operator.mjs check .env
 - Dev `.env` holds a documented placeholder credential — production MUST run
   `init`; the server refuses production boot otherwise (`auth_not_configured`).
 
+### 4b. The sign-in page (`/login`)
+
+- `/login` is a **standalone page**, not a dashboard screen: no sidebar, no
+  search bar, no section footer — only the security notice and the form. Every
+  unauthenticated request is redirected there, and the dashboard (sidebar,
+  search, pages) appears only **after** the server accepts the credential.
+- The page renders the owner's creative form (artwork from
+  `public/creative-login/`, animated by the pinned `gsap` dependency — no remote
+  script, so it works offline). The whole scene renders **50% larger** than a
+  plain fit-to-window, and the form's letter size is deliberately held constant
+  (the artwork, cords and input boxes grow; the words stay 15 px).
+- **Typing a valid e-mail starts the submit animation**: the gear train spins,
+  the sprayer runs and the submit cord-button swings into place. Tick the consent
+  box to pull the cord, then press submit (Enter always works). The demo's own
+  file was not modified — `public/creative-login/activate-on-email.js` (ours)
+  drives the same timelines from the e-mail field; see PROVENANCE.md there.
+- **To use a different credential**, change it with `scripts/operator.mjs`
+  (above). Never write a password into a page or component: it would ship to
+  the browser and be readable by anyone with devtools. `tests/creative_login.test.ts`
+  fails the build if one appears.
+- Failed sign-ins always show the same generic message and clear the password
+  field; the server never reveals whether an account exists.
+- The form never decides authentication — the server checks the scrypt hash,
+  applies the login rate limit, and sets the session cookie.
+- Expected behaviour to verify after any change: `curl -o /dev/null -w '%{http_code}'`
+  must return **307** for `/`, `/agencies`, `/discovery`, `/opportunities`,
+  `/review`, `/resolve` when signed out, and **200** for `/login` only. A 200
+  on a gated page means something is streaming a shell before the auth check —
+  see the `loading.tsx` note below.
+
 ## 5. Health checks & log inspection
 
 - `GET /api/health` → `{"status":"ok","db":{"ok":true,"latencyMs":N}}`
@@ -79,6 +170,86 @@ node scripts/operator.mjs check .env
   `failure_log`/`audit_log` via `/audit` → reproduce with the domain's own
   test suite before changing code.
 
+## 5b. Manual refresh (Discovery)
+
+- Plan on `/discovery` (planner form, 1..25 queries) or
+  `POST /api/discovery/refreshes`; runs execute synchronously, then report.
+  No scheduling exists — every refresh is an explicit operator action.
+- Read status: `/discovery?refresh=<runId>` or
+  `GET /api/discovery/refreshes/<id>` (coverage ledger, six measures,
+  end-state, shortfall rows). Task yields are frozen history; opportunity
+  states reflect now (re-evaluation moves rows by design).
+- Shortfalls are explicit rows (never transferred between pipelines);
+  caller-stated targets only — no approved allocation exists (O2).
+- Identity ambiguity → `/resolve` review queue (never auto-merged).
+- Failed run recovery: inspect the task ledger + child runs, fix the cause
+  (terms, network, bad query), re-run the plan — reruns are idempotent
+  (uniques arbitrate; history appends, entities don't duplicate).
+- **Crashed/stalled runs** (process died mid-run): `/discovery` shows a
+  warning while any run is still `running`, and the recovery card closes them
+  out — or `POST /api/discovery/reap {staleAfterMinutes, dryRun?}`. State the
+  threshold yourself; there is no default and no scheduler. Dry run first:
+  it lists candidates and writes nothing. Reaping moves the run to `failed`
+  with a reason, fails its unfinished tasks, and writes one audit row + one
+  `failure_log` row per run. Nothing is deleted and nothing resumes
+  automatically; re-run the plan afterwards. Caveat: there is no heartbeat,
+  so a threshold shorter than a genuinely slow run will close a healthy run —
+  that judgement is yours, which is why dry-run exists.
+- **Reaping a run that is still executing**: the reap wins and nothing is lost
+  or duplicated. The in-flight task keeps the reaper's `failed` state (a late
+  worker is refused, 409 — it never rewrites a closed task), the run's
+  `finished_at` and reason are not touched a second time, one audit row + one
+  `failure_log` row exist per reaped run however many times you reap, and the
+  work the child run already committed (companies, opportunities, yields)
+  stays. The worker then finalizes nothing and its response reports the status
+  actually stored on the run, not its own local tally.
+- **Source permission** is a hard gate: an adapter runs only while its
+  `public.source.enabled` row is enabled. A disabled/unknown source refuses
+  the run *before* any row is written (409 `source_disabled`, 422
+  `unknown_source`) — fix terms/permissions, do not edit run rows by hand.
+  Current permissions are listed on `/discovery` under Source permissions.
+
+## 5c. Identity conflicts (human work, never automatic)
+
+- When a discovered record collides with an existing canonical agency (same
+  registry id in the same country, or the same domain), the record is REFUSED
+  from becoming a company — canonical identity rules (D-011) hold. The run
+  counts a `conflict` and captures an **identity conflict** row: what the source
+  claimed, against which existing agency, under which rule, with the source
+  record id. Nothing is merged, nothing is overwritten, and no second company
+  row is created.
+- Read them on `/discovery` → open the run → "Identity conflicts" (also in
+  `GET /api/discovery/runs/<id>`), and unresolved ones stay OPEN forever until
+  a human decides. Re-running a discovery does not duplicate captures.
+- Decide them yourself: `lib/resolve/conflicts.ts`
+  (`decideIdentityConflict`) records `reviewed`/`deferred` with actor + reason
+  and writes an audit row. Deciding a conflict never merges companies — the
+  actual identity outcome is made in the existing resolution workflow
+  (`/resolve`), by a human, with its own audit trail.
+- Absence of evidence is not evidence of absence: a conflict row says "the
+  source claimed X", never "X is the same company as Y".
+
+## 5d. Distinct counters (do not mix them up)
+
+| Counter | Meaning | Source |
+|---|---|---|
+| `found` / `new` / `duplicates` / `skipped` / `conflicts` / `failed` | per-run record outcomes, frozen at run end | `discovery_run` |
+| task ledger (`done`, `failed`, `skipped_low_yield`, yields) | per-coverage-task outcome of a refresh, frozen | `discovery_coverage_task` |
+| `new_eligible`, `promoted`, `excluded`, `stale`, `unresolved` | refresh-level opportunity states, LIVE (re-evaluation moves rows) | `opportunity.status` |
+| `unresolved_opportunities` / `unresolved_tasks` | the two things `unresolved` adds together: businesses awaiting a human decision, versus plan work not yet finished | `opportunity.status` / `discovery_coverage_task.status` |
+| `measures_basis: "live_projection"` | reminder carried in every summary payload that the measures above are read-time projections, not a frozen record of the run | — |
+| `unattributedSourceRecords` | new records found but NOT registered because their stored source key could not be resolved — nothing is invented (non-zero means investigate provenance, not the data) | `discovery_record.source_key` |
+| `new_evidence` | distinct claims created for this refresh's companies during the run window | `claim` |
+| `duplicates` (refresh level) | duplicate run items across the refresh's child runs | `discovery_run_item` via `child_run_id` |
+| child run `partial` | the page budget (≤3 pages) ran out with more pages available — not a failure | `discovery_run.status` |
+| `conflicts` (run level) | records refused by canonical identity rules; captured for review, never merged | `discovery_run.conflicts` + `identity_conflict` |
+| shortfall | target minus actual, per pipeline, never transferred | computed |
+| opportunity total on `/opportunities` | every stored opportunity in that pipeline, all statuses | `opportunity` |
+
+`eligible` on an opportunity is a lifecycle status, not a purchased-intent
+signal. Counting content itself (which records count as eligible new) is
+owner decision O3/O10 and stays unimplemented on purpose.
+
 ## 6. Incident triage (symptom → action)
 
 | Symptom | Likely cause | Action |
@@ -89,6 +260,8 @@ node scripts/operator.mjs check .env
 | Login 429 `rate_limited` | 5 bad attempts / 10 min | Wait, or restart app (ledger is in-memory by design) |
 | Login 401 with correct password | Unescaped `$` in hash (mangled by Next expansion) | Re-paste from `operator.mjs hash`, exact bytes; `check` must say present |
 | `verify` fails `source count` | Stale assertion (fixed R-02) — should not recur | Inspect, don't weaken; see R-02 report |
+| `verify` fails `company count` | Fixed 2026-10-15 (F17): verification is now identity-based, so a dev database holding real discovered companies passes. If it fails now, a **seed row** is genuinely missing or altered — investigate, do not delete discovered data | Check the named seed uuid/domain; never satisfy a count by deleting opportunities |
+| `verify` fails a Discovery structure block | A migration dropped/changed a table, constraint, index or guard trigger | Compare with `db/migrations/2026101419000{1..8}_*.sql`; add a forward migration, never edit an applied one |
 | `seed` fails mid-run | Whole batch rolled back (atomic) — nothing partial | Fix the cause, re-run; see R-03 report |
 | Port 3101/5434 in use | Stale process | Find listener, stop it, restart |
 

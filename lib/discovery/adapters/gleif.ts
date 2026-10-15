@@ -53,6 +53,8 @@ export class GleifAdapter implements SourceAdapter {
       name: "GLEIF LEI Index",
       version: GLEIF_ADAPTER_VERSION,
       category: "S-02",
+      // Registry key seeded enabled by T-006; `source.enabled` gates runs.
+      sourceKey: "gleif-api",
       capabilities: ["discover", "health"],
       limitations: [
         "LEI records carry no sector data — agency fit is always unverified",

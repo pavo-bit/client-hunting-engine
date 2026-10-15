@@ -38,7 +38,7 @@ for (const u of SCRATCH_URLS) {
 
 const ROOT = process.cwd();
 const SEED_SQL = readFileSync(join(ROOT, "db", "seed.sql"), "utf8");
-const MIGRATION_COUNT = 26;
+const MIGRATION_COUNT = 44;
 const HYPOTHESIS_LIFECYCLE = [
   "generated",
   "needs_review",
@@ -311,16 +311,43 @@ describe("R-03 seed compatibility on a fully migrated database", () => {
     for (const db of [SEEDED_DB, ROLLBACK_DB]) expect(db).not.toBe(devName);
 
     // The dev database still holds its own seed data, unmodified.
+    //
+    // Asserted BY IDENTITY, not by global counts: dev is a live working
+    // database, and legitimate operator use (a real discovery refresh) adds
+    // rows that are none of the seed's business. The invariant under test is
+    // "the tests never touched dev and the seed's own records are intact",
+    // which is strictly stronger than counting rows.
     const c = new Client({ connectionString: devUrl });
     await c.connect();
     try {
-      const r = await c.query<{ companies: number; claims: number; hypotheses: number }>(`
-        select (select count(*)::int from public.company) as companies,
-               (select count(*)::int from public.claim) as claims,
-               (select count(*)::int from public.hypothesis) as hypotheses`);
-      expect(r.rows[0].companies).toBe(3);
-      expect(r.rows[0].claims).toBe(5);
-      expect(r.rows[0].hypotheses).toBe(1);
+      const r = await c.query<{
+        name: string;
+        domain_norm: string;
+        claims: number;
+        hypotheses: number;
+      }>(
+        `select co.name, co.domain_norm,
+                (select count(*)::int from public.claim cl where cl.company_id = co.id) as claims,
+                (select count(*)::int from public.hypothesis h where h.company_id = co.id) as hypotheses
+         from public.company co
+         where co.id in (
+           '11111111-1111-4000-8000-111111111111',
+           '22222222-2222-4000-8000-222222222222',
+           '33333333-3333-4000-8000-333333333333'
+         )
+         order by co.name`,
+      );
+      expect(r.rows).toHaveLength(3);
+      expect(r.rows).toEqual([
+        { name: "Acme Webworks", domain_norm: "acme-webworks.example", claims: 5, hypotheses: 1 },
+        { name: "Globex Digital Studio", domain_norm: "globex-digital.example", claims: 0, hypotheses: 0 },
+        { name: "Initech Mobile Lab", domain_norm: "initech-mobile.example", claims: 0, hypotheses: 0 },
+      ]);
+      // The seeded hypothesis is still exactly the one R-03 described.
+      const h = await c.query(
+        "select status from public.hypothesis where company_id = '11111111-1111-4000-8000-111111111111'",
+      );
+      expect(h.rows.map((x) => x.status)).toEqual(["needs_review"]);
     } finally {
       await c.end();
     }

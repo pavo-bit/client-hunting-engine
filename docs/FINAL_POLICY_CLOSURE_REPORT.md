@@ -64,7 +64,7 @@ one forbids starting.
 
 No code changed this prompt except tests + docs (see §6), so preservation is
 structural: Next.js 15.5 + TypeScript + PostgreSQL 17 + Compose untouched;
-50-project target untouched; no Supabase/Redis/Kafka/ML/outreach/probing;
+50-project-record performance scale untouched; no Supabase/Redis/Kafka/ML/outreach/probing;
 external content still untrusted (integrity suite covers it); AUTH-001 guards,
 R-02 categories, R-03 seed behavior all exercised by the suites below, which
 pass unmodified in their assertions.

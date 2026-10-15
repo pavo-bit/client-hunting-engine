@@ -162,6 +162,12 @@ Fields: Objective · Prerequisites · Likely files/modules · Expected result ·
   R-03 (`docs/R03_SEED_COMPATIBILITY_REPORT.md`); the seeded demo record is `needs_review` with
   3 supporting + 1 contradicting claim and a `legacy` score row.
 
+- Precondition note: Discovery discovery/collection plumbing (Prompt 4–5) is implemented and
+  executed against a real database — 33 migrations, manual refresh, opportunity collection,
+  source-permission gate, crashed-run reaping, identity-conflict capture. See
+  `docs/DISCOVERY_READINESS_REPORT_PROMPT5.md`. This does **not** start T-014 and does not
+  approve counting/eligibility content (O2/O3/O10 remain OPEN).
+
 ### T-014 — original task stub (kept for history; specified above)
 
 - Objective: AC-001…AC-005 on worldwide agency briefs (mixed agency types + countries).

@@ -140,6 +140,13 @@ export interface AdapterManifest {
   accessRequirements: string;
   /** Maximum records per discover() call (adapter clamps higher limits). */
   maxPageSize: number;
+  /**
+   * Source-registry key this adapter collects from. Gated by
+   * `public.source.enabled` before every run (amendment §4F / B-D5): present +
+   * enabled = may run; absent or disabled = refused, fail closed. Omitted
+   * means "use the run module's default source key" (legacy adapters).
+   */
+  sourceKey?: string;
 }
 
 /** Opaque, adapter-defined configuration. Secrets stay server-side. */

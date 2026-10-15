@@ -19,3 +19,118 @@
     animation-duration: 0.01ms !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Creative operator sign-in (/login).
+
+   Layout only. The form styling and every animation come from the owner's
+   reference demo, served verbatim from /creative-login/ (see PROVENANCE.md
+   there). These rules exist because the demo assumed a bare page: we centre
+   the artwork, keep the consent row readable, and shift the SVG down by half
+   the extra row the password field adds so the pull-cord still meets the
+   checkbox and the button.
+--------------------------------------------------------------------------- */
+.creative-login-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 78vh;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.creative-login-header {
+  text-align: center;
+}
+
+/* The stage measures itself with clientWidth; inside a centred flex column a
+   shrink-to-fit child would report the 1000px artwork instead of the space it
+   actually has, so pin it to the available width. */
+.creative-login {
+  width: 100%;
+}
+
+/* The demo centres its container at 38% of the viewport and uses a fixed
+   1000×1000 stage. Inside the app shell we instead scale that whole stage by
+   one factor (set from --creative-scale) so the SVG and the 270px form keep
+   the relationship the cord geometry depends on. */
+.creative-login-stage {
+  --creative-scale: 1;
+  --creative-inverse-boost: 1;
+  --creative-stage-height: 640px;
+  position: relative;
+  width: 100%;
+  height: var(--creative-stage-height);
+  margin: 0 auto;
+}
+
+.creative-login .container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* `container` is ALSO a Tailwind utility (width:100% + per-breakpoint
+     max-width). Without these two, the demo's class silently picks up
+     max-width: 768px and the stage collapses out of alignment. */
+  width: 1000px;
+  max-width: none;
+  height: 1000px;
+  transform: translate(-50%, -50%) scale(var(--creative-scale));
+  /* Centre origin: the stage height is exactly 1000 × scale, so the artwork
+     lands inside it instead of spilling over the text below. */
+  transform-origin: center center;
+}
+
+/* One extra 60px row (password) shifts the form's visual centre by 30px in
+   stage units; the artwork follows so the cord stays aligned. */
+.creative-login svg {
+  transform: translate(-50%, calc(-50% + 30px));
+}
+
+/* The scene is rendered 50% larger than a plain fit (--creative-scale). The
+   form's TYPE is divided back out, so the letters stay 15px on screen while
+   the artwork, cords and input boxes grow with the scene. Only the font size
+   is compensated - no element is nudged to a different position. */
+.creative-login .form-container,
+.creative-login .form-container label,
+.creative-login .form-container input,
+.creative-login .form-container input::placeholder {
+  font-size: calc(15px * var(--creative-inverse-boost, 1));
+}
+
+/* The consent row needs room for its label. */
+.creative-login .form-container .form-row input[type="checkbox"] + span {
+  font-size: calc(13px * var(--creative-inverse-boost, 1));
+  color: #333;
+}
+
+/* The sign-in error message must never inherit the demo's transparent
+   button colour treatment. */
+.creative-login .form-container [role="alert"] {
+  height: auto;
+  min-height: 0;
+  padding: 0.25rem 0;
+}
+
+.creative-login-footer {
+  max-width: 34rem;
+  margin: 1.5rem auto 0;
+  text-align: center;
+  font-size: 12px;
+  color: #555;
+}
+
+/* Keyboard users must always be able to reach and operate the submit button:
+   the demo hides it behind its own animation state, so give it a visible,
+   reachable box regardless of animation progress. */
+.creative-login .form-container input[type="submit"] {
+  position: relative;
+  z-index: 2;
+}
+
+/* If the viewport is short, the scaled stage shrinks with it (the scale is
+   computed from both width and height in the component). */
+@media (max-width: 380px) {
+  .creative-login .form-container {
+    width: 230px;
+  }
+}

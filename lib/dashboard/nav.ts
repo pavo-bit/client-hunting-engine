@@ -6,6 +6,8 @@
 import {
   Activity,
   Building2,
+  CalendarDays,
+  ClipboardCheck,
   ClipboardList,
   Database,
   FileText,
@@ -16,14 +18,19 @@ import {
   Lightbulb,
   ListChecks,
   Mails,
+  Microscope,
   Scale,
   ScrollText,
   Search,
+  ShieldCheck,
+  Crosshair,
   Settings,
   KanbanSquare,
   Layers,
   Briefcase,
   Package,
+  Target,
+  Wrench,
 } from "lucide-react";
 
 export interface NavItem {
@@ -44,6 +51,7 @@ export const NAV_GROUPS: NavGroup[] = [
     title: "Command Center",
     items: [
       { href: "/overview", label: "Overview", icon: LayoutDashboard, state: "live" },
+      { href: "/today", label: "Today", icon: CalendarDays, state: "live" },
       { href: "/activity", label: "Activity & Status", icon: Activity, state: "live" },
     ],
   },
@@ -54,6 +62,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/search", label: "Global Search", icon: Search, state: "live" },
       { href: "/agencies/new", label: "Add Agency", icon: ClipboardList, state: "live" },
       { href: "/discovery", label: "Discovery", icon: Search, state: "partial" },
+      { href: "/opportunities", label: "Opportunities", icon: Crosshair, state: "partial" },
       { href: "/resolve", label: "Identity Resolution", icon: GitBranch, state: "partial" },
       { href: "/research", label: "Research Workspace", icon: FlaskConical, state: "partial" },
     ],
@@ -75,6 +84,16 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    title: "Qualification",
+    items: [
+      { href: "/qualification", label: "Pursuit Queue", icon: Target, state: "partial" },
+      { href: "/qualification/assess", label: "Assess Console", icon: Microscope, state: "partial" },
+      { href: "/qualification/research", label: "Research Tasks", icon: ClipboardCheck, state: "partial" },
+      { href: "/qualification/policy", label: "Policy & Capacity", icon: ShieldCheck, state: "partial" },
+      { href: "/qualification/audit", label: "Decisions & Metrics", icon: ListChecks, state: "partial" },
+    ],
+  },
+  {
     title: "Sales Workspace",
     items: [
       { href: "/briefs", label: "Opportunity Briefs", icon: FileText, state: "live" },
@@ -90,6 +109,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/catalog", label: "Service Catalog", icon: Package, state: "partial" },
       { href: "/sources", label: "Source Registry", icon: Database, state: "live" },
       { href: "/audit", label: "Audit & Failures", icon: ScrollText, state: "live" },
+      { href: "/admin", label: "Administration", icon: Wrench, state: "live" },
       { href: "/settings", label: "Settings & Access", icon: Settings, state: "partial" },
     ],
   },

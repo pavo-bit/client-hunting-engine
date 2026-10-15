@@ -1,0 +1,118 @@
+{
+  "documentStatus": "DRAFT-UNAPPROVED — PROPOSAL ONLY. NOT ACTIVE. NOT APPROVED. DO NOT PUBLISH.",
+  "policyVersion": "v1-draft-2026-10-15",
+  "basedOn": "docs/PART1_OWNER_DECISION_PACKET.md §4.3 (recommended rubric direction). Every value below is either STRUCTURAL (engine-established, cited) or PROPOSED (owner must amend or confirm). See provenance map at the end.",
+  "definition": {
+    "gates": [
+      { "id": "suppression", "outcomeOnFail": "not_eligible" },
+      { "id": "jurisdiction", "outcomeOnFail": "blocked" },
+      { "id": "exclusion", "outcomeOnFail": "not_eligible" },
+      { "id": "service_availability", "outcomeOnFail": "not_eligible" },
+      { "id": "identity_resolution", "outcomeOnFail": "blocked" },
+      { "id": "evidence_sufficiency", "outcomeOnFail": "needs_evidence" },
+      { "id": "contradiction_freshness", "outcomeOnFail": "blocked" }
+    ],
+    "jurisdictions": {
+      "allowedCountries": null,
+      "excludedCountries": []
+    },
+    "signalMap": {
+      "identity": "identity_proof"
+    },
+    "weights": {
+      "service_fit": 0.2,
+      "need_strength": 0.2,
+      "timing": 0.15,
+      "evidence_confidence": 0.2,
+      "actionability": 0.15
+    },
+    "floors": {
+      "service_fit": null,
+      "need_strength": null,
+      "timing": null,
+      "evidence_confidence": 30,
+      "actionability": null,
+      "pursuit_priority": null
+    },
+    "minCoverage": 0.5,
+    "bands": [
+      { "name": "Elite", "min": 85 },
+      { "name": "Qualified", "min": 65 },
+      { "name": "Watch", "min": 40 }
+    ],
+    "timing": {
+      "identity_proof": { "freshDays": 365, "staleDays": 1095 }
+    },
+    "freshnessDefaultDays": 90,
+    "ranking": { "strategy": "lexicographic", "tiebreak": ["evidence_confidence", "need_strength"] },
+    "capacity": { "maxActivePursuits": null, "focusServices": [], "focusPipelines": [] },
+    "exclusions": {
+      "relationshipTypes": []
+    },
+    "deferral": {
+      "maxDays": 30,
+      "maxLifetime": 3
+    }
+  },
+  "rubric": {
+    "service_fit": {
+      "range": [0, 100],
+      "inputs": ["compatible approved service", "usable evidence signal families"],
+      "missingSemantics": "unscored (null), excluded from composite, counted against coverage — never imputed",
+      "evidence": "cited claim ids in evidenceRefs",
+      "rubric": "Profile match plus share of the service's signal families covered by usable evidence; disqualifying anti-signal match zeroes the dimension with a flag."
+    },
+    "need_strength": {
+      "range": [0, 100],
+      "inputs": ["usable need-family evidence with grades and independence groups"],
+      "missingSemantics": "unscored (null), excluded from composite, counted against coverage — never imputed",
+      "evidence": "cited claim ids in evidenceRefs",
+      "rubric": "Breadth across independent groups, supporting count and grade average; single-source cases score lower by construction."
+    },
+    "timing": {
+      "range": [0, 100],
+      "inputs": ["dated usable evidence", "family decay rules", "explicit as_of"],
+      "missingSemantics": "unscored (null), excluded from composite, counted against coverage — never imputed",
+      "evidence": "strongest-signal claim id cited",
+      "rubric": "Strongest decayed recency signal per family rules; undated evidence is neutral, never fresh."
+    },
+    "evidence_confidence": {
+      "range": [0, 100],
+      "inputs": ["usable evidence grades, independence groups, review flags"],
+      "missingSemantics": "unscored (null), excluded from composite, counted against coverage — never imputed",
+      "evidence": "cited claim ids in evidenceRefs",
+      "rubric": "Grade average with independence bonus and needs-review penalty; grade-C sources labelled wherever they contribute."
+    },
+    "actionability": {
+      "range": [0, 100],
+      "inputs": ["canonical domain", "operator answers (channel, timeline)"],
+      "missingSemantics": "unscored (null) only when no channel information exists at all; otherwise scored from available facts, gaps listed",
+      "evidence": "domain fact; operator answers recorded verbatim",
+      "rubric": "Reachability from established facts plus operator-confirmed answers; unknown answers are missing, never assumed."
+    },
+    "pursuit_priority": {
+      "range": [0, 100],
+      "inputs": ["composite", "capacity alignment"],
+      "missingSemantics": "null without a composite",
+      "evidence": "adjustment breakdown in explanation",
+      "rubric": "Composite adjusted by capacity alignment ONLY (focus matches). Intrinsic dimensions are never touched by capacity."
+    }
+  },
+  "provenanceMap": {
+    "gates/order/outcomes": "STRUCTURAL — canonical gate registry, tested precedence",
+    "ranking strategy/tiebreak": "STRUCTURAL — engine contract",
+    "ranges/missing-semantics": "STRUCTURAL — engine null-exclusion contract",
+    "jurisdictions/signalMap/weights/floors/minCoverage/bands/timing/freshness/capacity/exclusions/deferral": "PROPOSED — each needs owner confirm/amend (O10/D-006/O7 and content decisions)",
+    "rubric prose": "PROPOSED working text"
+  },
+  "fieldNotes": {
+    "jurisdictions": "PROPOSED: null allow-list follows D-002 worldwide scope (DECIDED). Owner question: confirm no embargo/sanctions exclusions are required before activation.",
+    "signalMap": "Only predicate observed in production data. Need-family predicates await source curation (O9) — unmapped predicates stay unscorable by design.",
+    "weights": "PROPOSED neutral starting point. NO evidence behind these specific values — primary amendment target for the owner (D-006/O7). The engine normalizes, so only ratios matter.",
+    "floors": "PROPOSED: single floor on evidence confidence so grade-poor cases cannot rank on fit alone. Amend or remove freely.",
+    "bands": "PROPOSED band names/cutoffs for review. Set to null to forbid bands entirely.",
+    "timing": "PROPOSED: registry records change slowly. Need-family decay awaits source curation (O9).",
+    "exclusions.relationshipTypes": "PROPOSED empty. Owner question: confirm no relationship types (parent/subsidiary/alias_network/sibling) disqualify.",
+    "deferral": "PROPOSED bounds for human deferrals. Omit the block to keep structural single-active-deferral only."
+  }
+}
