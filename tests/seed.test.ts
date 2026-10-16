@@ -38,7 +38,7 @@ for (const u of SCRATCH_URLS) {
 
 const ROOT = process.cwd();
 const SEED_SQL = readFileSync(join(ROOT, "db", "seed.sql"), "utf8");
-const MIGRATION_COUNT = 44;
+const MIGRATION_COUNT = 46;
 const HYPOTHESIS_LIFECYCLE = [
   "generated",
   "needs_review",

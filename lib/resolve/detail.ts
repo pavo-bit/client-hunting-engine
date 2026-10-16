@@ -37,7 +37,20 @@ export interface CompanyDetail {
     other_name: string;
   }[];
   absorbed: { id: string; name: string }[];
-  claims: { id: string; claim_text: string; claim_status: string; stale: boolean }[];
+  claims: {
+    id: string;
+    claim_text: string;
+    claim_status: string;
+    predicate: string | null;
+    /** Source publication/event date; null when the source stated none. */
+    published_at: string | null;
+    /** When the observation was seen; distinct from ingestion time. */
+    observed_at: string | null;
+    source_key: string | null;
+    source_url: string | null;
+    fetched_at: string | null;
+    stale: boolean;
+  }[];
   hypotheses: { id: string; title: string; status: string; rule_id: string | null }[];
   proposals: { id: string; title: string; status: string; version: number }[];
   audit: {
@@ -101,9 +114,17 @@ export async function getCompanyDetail(
         [id],
       ),
       poolConn.query(
-        `select id, claim_text, claim_status,
-                (expires_at is not null and expires_at < now()) as stale
-         from public.claim where company_id = $1 order by created_at desc limit 100`,
+        // Source attribution travels with the claim: an operator must be able
+        // to see WHICH source asserted it and WHEN, without opening the
+        // evidence page. published_at is the source's own date and stays NULL
+        // when the source stated none; observed_at is when it was seen.
+        `select c.id, c.claim_text, c.claim_status, c.predicate,
+                c.published_at, c.observed_at,
+                s.source_key, s.url as source_url, s.fetched_at,
+                (c.expires_at is not null and c.expires_at < now()) as stale
+           from public.claim c
+           left join public.snapshot s on s.id = c.snapshot_id
+          where c.company_id = $1 order by c.created_at desc limit 100`,
         [id],
       ),
       poolConn.query(

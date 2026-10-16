@@ -8,8 +8,10 @@ import { requireOperatorApi, requireSameOrigin } from "@/lib/auth/guard";
  * POST /api/evidence/ingest — record an observation (+ optional claim).
  * Body: { companyId, sourceKey, url, excerpt?, observedAt?, retentionClass?,
  *   actor?, claim?: { predicate?, text, initialStatus?, reliability,
- *   credibility, expiresAt? } }. Idempotent on content hash. Ingestion may
- * only assert observed/inferred/assumed — never verified or corroborated.
+ *   credibility, expiresAt?, publishedAt? } }. Idempotent on content hash.
+ * Ingestion may only assert observed/inferred/assumed — never verified or
+ * corroborated. The source permission gate applies: disabled sources are
+ * refused before any write. Personal contact data is refused by validation.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const auth = await requireOperatorApi(req);
@@ -48,6 +50,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             reliability: raw["reliability"] as "A" | "B" | "C" | "D",
             credibility: typeof raw["credibility"] === "number" ? raw["credibility"] : NaN,
             expiresAt: typeof raw["expiresAt"] === "string" ? raw["expiresAt"] : undefined,
+            publishedAt: typeof raw["publishedAt"] === "string" ? raw["publishedAt"] : undefined,
           }
         : undefined,
     );

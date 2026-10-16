@@ -9,7 +9,7 @@
 // Pure decision first (`decideSource`) so the policy is unit-testable with no
 // database; the query wrappers are thin.
 
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 
 export interface SourceRow {
   key: string;
@@ -74,7 +74,7 @@ function refusal(d: { code: string; message: string }): Error & { status: number
  * run path (single-query runs and planned refresh tasks) BEFORE any write, so
  * a refused run leaves no partial history.
  */
-export async function assertSourceEnabled(pool: Pool, sourceKey: string): Promise<void> {
+export async function assertSourceEnabled(pool: Pool | PoolClient, sourceKey: string): Promise<void> {
   const r = await pool.query("select key, enabled, category from public.source where key = $1", [
     sourceKey,
   ]);

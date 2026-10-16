@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPool } from "@/lib/intake/db";
 import { getCompanyDetail } from "@/lib/resolve/detail";
@@ -38,7 +38,7 @@ export default async function AgencyDetailPage({
       <PageHeader
         trail={[{ label: "Agency Intelligence" }, { label: "Directory", href: "/agencies" }, { label: c.name }]}
         title={c.name}
-        description={`${c.agency_type} · ${c.country}${c.country_code ? ` (${c.country_code})` : ""}`}
+        description={`${c.agency_type} Â· ${c.country}${c.country_code ? ` (${c.country_code})` : ""}`}
         actions={
           <span className="inline-flex gap-2">
             <ResolveButton companyId={c.id} />
@@ -60,17 +60,17 @@ export default async function AgencyDetailPage({
           <CardHeader><CardTitle>Canonical identity</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-sm">
             <p>Status: <Badge variant={c.merged_into ? "warning" : c.discovery_status === "qualified" ? "success" : "default"}>{c.merged_into ? "merged" : c.discovery_status}</Badge></p>
-            <p>Domain: {c.domain_norm ?? "—"}</p>
-            <p>Registry: {c.registry_id ?? "—"}{c.registry_type ? ` (${c.registry_type})` : ""}</p>
-            <p>Website: {c.website_url ?? "—"}</p>
-            <p>Region: {c.region ?? "—"}</p>
+            <p>Domain: {c.domain_norm ?? "â€”"}</p>
+            <p>Registry: {c.registry_id ?? "â€”"}{c.registry_type ? ` (${c.registry_type})` : ""}</p>
+            <p>Website: {c.website_url ?? "â€”"}</p>
+            <p>Region: {c.region ?? "â€”"}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader><CardTitle>Verified aliases ({detail.aliases.length})</CardTitle></CardHeader>
           <CardContent>
             {detail.aliases.length === 0 ? (
-              <p className="text-sm text-slate-500">No aliases — none absorbed yet.</p>
+              <p className="text-sm text-slate-500">No aliases â€” none absorbed yet.</p>
             ) : (
               <ul className="list-disc space-y-1 pl-5 text-sm">
                 {detail.aliases.map((a) => (
@@ -112,7 +112,7 @@ export default async function AgencyDetailPage({
               k.conflicting_registry ? (
                 <Badge key="c" variant="danger">registry conflict</Badge>
               ) : (
-                "—"
+                "â€”"
               ),
               k.status,
             ])}
@@ -124,17 +124,26 @@ export default async function AgencyDetailPage({
         <CardHeader><CardTitle>Claims ({detail.claims.length})</CardTitle></CardHeader>
         <CardContent>
           <SimpleTable
-            caption="Claims about this company"
-            columns={["Statement", "Status", "Freshness"]}
+            caption="Claims about this company, with the source and date behind each one"
+            columns={["Statement", "Family", "Source", "Published", "Seen", "Status", "Freshness"]}
             rows={detail.claims.map((cl) => [
               <Link key={`t${cl.id}`} href={`/evidence/${cl.id}`} className="text-blue-700 hover:underline">
-                {cl.claim_text.length > 120 ? `${cl.claim_text.slice(0, 120)}…` : cl.claim_text}
+                {cl.claim_text.length > 120 ? `${cl.claim_text.slice(0, 120)}...` : cl.claim_text}
               </Link>,
+              <span key={`p${cl.id}`} className="text-xs text-slate-600">{cl.predicate ?? "-"}</span>,
+              <span key={`k${cl.id}`} className="font-mono text-xs">{cl.source_key ?? "no snapshot"}</span>,
+              <span key={`pb${cl.id}`} className="text-xs">{cl.published_at ? new Date(cl.published_at).toISOString().slice(0, 10) : "-"}</span>,
+              <span key={`ob${cl.id}`} className="text-xs">{cl.observed_at ? new Date(cl.observed_at).toISOString().slice(0, 10) : "-"}</span>,
               <span key={`s${cl.id}`}>{cl.claim_status}</span>,
               <span key={`f${cl.id}`}>{cl.stale ? "stale" : "fresh"}</span>,
             ])}
             empty="No claims recorded. Ingest observations to begin evidence."
           />
+          <p className="mt-2 text-xs text-slate-500">
+            Published is the date the source itself stated, left blank when it stated
+            none. Seen is when the observation was captured. Claim status is never
+            promoted automatically; verified and corroborated remain human-only.
+          </p>
         </CardContent>
       </Card>
       <Card>
@@ -144,12 +153,12 @@ export default async function AgencyDetailPage({
             columns={["Hypothesis", "Rule", "Status"]}
             rows={detail.hypotheses.map((hh) => [
               <Link key={`h${hh.id}`} href={`/hypotheses/${hh.id}`} className="text-blue-700 hover:underline">
-                {hh.title.length > 120 ? `${hh.title.slice(0, 120)}…` : hh.title}
+                {hh.title.length > 120 ? `${hh.title.slice(0, 120)}â€¦` : hh.title}
               </Link>,
-              <span key={`r${hh.id}`}>{hh.rule_id ?? "—"}</span>,
+              <span key={`r${hh.id}`}>{hh.rule_id ?? "â€”"}</span>,
               <span key={`s${hh.id}`}>{hh.status}</span>,
             ])}
-            empty="No hypotheses. Generate runs deterministic rules over assessed evidence — silence means insufficient evidence."
+            empty="No hypotheses. Generate runs deterministic rules over assessed evidence â€” silence means insufficient evidence."
           />
         </CardContent>
       </Card>
@@ -165,7 +174,7 @@ export default async function AgencyDetailPage({
               </Link>,
               <span key={`s${pp.id}`}>{pp.status}</span>,
               <span key={`f${pp.id}`} className="text-xs text-slate-600">
-                Indicative ranges with stated assumptions — never confirmed requirements.
+                Indicative ranges with stated assumptions â€” never confirmed requirements.
               </span>,
             ])}
             empty="No proposals. Draft one from a validated hypothesis."
@@ -198,8 +207,8 @@ export default async function AgencyDetailPage({
               rows={detail.audit.map((a, i) => [
                 <span key={`w${i}`}>{new Date(a.created_at).toLocaleString()}</span>,
                 <span key={`a${i}`}>{a.actor}</span>,
-                <span key={`t${i}`}>{a.transition_from ?? "∅"} → {a.transition_to ?? "∅"}</span>,
-                <span key={`r${i}`}>{a.reason ?? "—"}</span>,
+                <span key={`t${i}`}>{a.transition_from ?? "âˆ…"} â†’ {a.transition_to ?? "âˆ…"}</span>,
+                <span key={`r${i}`}>{a.reason ?? "â€”"}</span>,
               ])}
               empty="No identity decisions recorded."
             />

@@ -1,0 +1,55 @@
+{
+  "jobs": [
+    {
+      "absolute_url": "https://job-boards.greenhouse.io/greenhouse/jobs/8126988?gh_jid=8126988",
+      "application_deadline": null,
+      "company_name": "Greenhouse",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": true
+        }
+      ],
+      "first_published": "2026-08-24T13:52:04-04:00",
+      "id": 8126988,
+      "internal_job_id": 3519410,
+      "language": "en",
+      "location": { "name": "Eastern Timezone" },
+      "metadata": null,
+      "requisition_id": "2026 - P3178",
+      "title": "Commercial Counsel",
+      "updated_at": "2026-10-09T18:28:27-04:00"
+    },
+    {
+      "absolute_url": "https://job-boards.greenhouse.io/greenhouse/jobs/8126989?gh_jid=8126989",
+      "company_name": "Greenhouse",
+      "first_published": null,
+      "id": 8126989,
+      "internal_job_id": 3519411,
+      "language": "en",
+      "location": { "name": "New York, NY, United States" },
+      "metadata": null,
+      "requisition_id": null,
+      "title": "Solutions Engineer",
+      "updated_at": "2026-10-01T09:00:00-04:00"
+    },
+    {
+      "absolute_url": "https://job-boards.greenhouse.io/greenhouse/jobs/8126990?gh_jid=8126990",
+      "company_name": "Greenhouse",
+      "first_published": "2026-09-15T08:00:00Z",
+      "id": 8126990,
+      "internal_job_id": null,
+      "language": "en",
+      "location": {},
+      "metadata": [{ "id": 1, "name": "Requisition Channel", "value_type": "text", "value": "Referral" }],
+      "requisition_id": "50",
+      "title": "Prospect",
+      "updated_at": "2026-09-15T08:00:00Z"
+    }
+  ],
+  "meta": { "total": 3 }
+}

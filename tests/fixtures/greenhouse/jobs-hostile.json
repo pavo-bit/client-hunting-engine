@@ -1,0 +1,12 @@
+{
+  "jobs": [
+    { "title": "No id, no location", "location": {} },
+    { "id": 900001, "title": "", "updated_at": "not-a-date" },
+    { "id": 900002, "title": "Loopback provenance URL", "absolute_url": "http://127.0.0.1:5434/secret" },
+    { "id": 900003, "title": "Metadata carries personal data", "metadata": [{ "name": "Hiring Manager Email", "value": "jane.smith@example.com" }] },
+    { "id": 900004, "title": "Bounded metadata: an oversized requisition id must be rejected", "absolute_url": "https://job-boards.greenhouse.io/x/jobs/900004", "requisition_id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" },
+    null,
+    "not-an-object"
+  ],
+  "meta": { "total": 7 }
+}

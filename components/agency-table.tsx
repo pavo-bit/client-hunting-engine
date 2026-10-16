@@ -26,6 +26,10 @@ export interface AgencyRow {
   country_code: string | null;
   discovery_status: string;
   created_at: string;
+  /** Present in server-side directory results; absent in older callers. */
+  evidence_count?: number;
+  latest_evidence_at?: string | null;
+  latest_source_key?: string | null;
 }
 
 const statusTone: Record<string, "default" | "info" | "success" | "warning" | "danger"> = {
@@ -96,10 +100,43 @@ export function AgencyTable({ rows }: { rows: AgencyRow[] }) {
       },
       {
         accessorKey: "discovery_status",
-        header: "Status",
+        header: "State",
         cell: ({ getValue }) => {
           const s = getValue<string>();
           return <Badge variant={statusTone[s] ?? "default"}>{s}</Badge>;
+        },
+      },
+      {
+        id: "evidence",
+        header: ({ column }) => (
+          <SortButton label="Evidence" onToggle={() => column.toggleSorting()} />
+        ),
+        accessorFn: (row) => row.evidence_count ?? 0,
+        cell: ({ row }) => {
+          const n = row.original.evidence_count ?? 0;
+          if (n === 0) {
+            return (
+              <Badge variant="warning" title="No observations captured — provenance is missing">
+                none
+              </Badge>
+            );
+          }
+          return (
+            <span>
+              {n}{" "}
+              <span className="text-xs text-slate-500">
+                {row.original.latest_source_key ?? "unknown source"}
+              </span>
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: "latest_evidence_at",
+        header: "Newest observation",
+        cell: ({ getValue }) => {
+          const v = getValue<string | null | undefined>();
+          return v ? new Date(v).toISOString().slice(0, 10) : "—";
         },
       },
     ],
@@ -142,7 +179,7 @@ export function AgencyTable({ rows }: { rows: AgencyRow[] }) {
         <tbody>
           {table.getRowModel().rows.length === 0 ? (
             <tr>
-              <TD colSpan={5} className="py-8 text-center text-slate-500">
+              <TD colSpan={7} className="py-8 text-center text-slate-500">
                 {rows.length === 0
                   ? "No agencies yet. Add one manually or import a CSV."
                   : "No agencies match this filter."}

@@ -91,7 +91,7 @@ export class GleifAdapter implements SourceAdapter {
     signal: AbortSignal | undefined,
   ): Promise<
     | { ok: true; json: unknown }
-    | { ok: false; retry: boolean; cause: "rate_limited" | "network" | "auth" | "terms_block" | "misconfigured" | "parse"; message: string }
+    | { ok: false; retry: boolean; cause: "rate_limited" | "network" | "auth" | "terms_block" | "misconfigured" | "parse"; message: string; retryAfterSec?: number }
     | { ok: false; cancelled: true }
   > {
     const r = await fetchJson(url, { signal, fetchImpl: this.fetchImpl });
@@ -103,9 +103,22 @@ export class GleifAdapter implements SourceAdapter {
         return { ok: false, retry: true, cause: "network", message: r.message };
       case "redirect_blocked":
         return { ok: false, retry: false, cause: "terms_block", message: r.message };
+      // Phase 2 transport controls: an oversized body or a non-JSON body is a
+      // permanent condition for this request shape — retrying is pointless and
+      // the payload must never be buffered or parsed regardless.
+      case "too_large":
+      case "bad_content_type":
+        return { ok: false, retry: false, cause: "parse", message: r.message };
       case "http": {
         const s = r.status ?? 0;
-        if (s === 429) return { ok: false, retry: true, cause: "rate_limited", message: "source rate limit (429)" };
+        if (s === 429)
+          return {
+            ok: false,
+            retry: true,
+            cause: "rate_limited",
+            message: "source rate limit (429)",
+            ...(r.retryAfterSec === undefined ? {} : { retryAfterSec: r.retryAfterSec }),
+          };
         if (s === 401) return { ok: false, retry: false, cause: "auth", message: "source auth failure (401)" };
         if (s === 403) return { ok: false, retry: false, cause: "terms_block", message: "source forbids this access (403)" };
         if (s >= 500) return { ok: false, retry: true, cause: "network", message: r.message };
@@ -139,7 +152,9 @@ export class GleifAdapter implements SourceAdapter {
       if (!r.retry || attempt >= MAX_RETRIES)
         return { kind: "failed", cause: r.cause, message: r.message, retryable: r.retry };
       attempt += 1;
-      const backoff = attempt === 1 ? 500 : 1500;
+      // Honour a server-requested delay when present (capped at 300s by
+      // parseRetryAfter); otherwise the fixed ladder below. Never unbounded.
+      const backoff = r.retryAfterSec ? r.retryAfterSec * 1000 : attempt === 1 ? 500 : 1500;
       if (await sleepAbortable(backoff, ctx.signal))
         return { kind: "failed", cause: "cancelled", message: "cancelled during backoff", retryable: false };
     }

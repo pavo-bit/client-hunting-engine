@@ -93,6 +93,131 @@ decide). Contracts: `docs/DISCOVERY_PHASE2_INTERFACE_SPEC.md`,
 - Admin: `/admin` — reconciliation triggers, consumer health, migrations,
   backups. Backup/restore stay terminal commands (see §3).
 
+## 2d. Manual observations (operator workflow)
+
+Record evidence-backed observations about a known agency at `/evidence`
+(bottom card) or via `POST /api/evidence/ingest`:
+
+1. Resolve the company first: create it at `/agencies/new` (or
+   `POST /api/companies`) when new — duplicate domains/registries are refused
+   with 409, never silently merged. Copy its id.
+2. On `/evidence`, fill company id, an **enabled** source (only enabled keys
+   are offered; disabled sources are refused with 409 before any write),
+   the source URL (recorded as provenance, never fetched), a short factual
+   excerpt, and a claim (signal family, reliability A–D, credibility 1–5).
+3. Optional dates: observed-at (event seen), published-at (source-stated
+   publication date — stays empty when the source states none), expires-at.
+4. Submit: identical resubmissions collapse onto the existing snapshot
+   (`existed: true`, no new rows). Validation errors arrive as
+   `{code, message}` — no stacks, no secrets.
+5. Privacy: personal emails (`firstname.lastname@…`) and personal social
+   profiles (`linkedin.com/in/…`) are refused by validation; use public
+   business channels (`info@`, `contact@`, …). The check blocks recognizable
+   shapes only — review pasted text before submitting.
+
+Signal families (closed vocabulary): identity, provides_service, operates_in,
+announced, hiring, contact, partnership, growth, service_request, other.
+
+## 2e. Greenhouse hiring signals (IMPLEMENTED — CURRENTLY BLOCKED, DO NOT ENABLE)
+
+The Greenhouse Job Board adapter exists, is tested, and is registered
+passively, but the source key `greenhouse-job-board` ships **disabled**. Do
+not enable it until the licensing decision in
+`docs/P2_SOURCE_SELECTION.md` §5 is recorded and dated by the owner. The API
+is free and keyless; what is unverified is the right to retain employer job
+data for commercial analysis. Until then, use §2d (manual observation), which
+needs no licence.
+
+For the record, once (and only once) that decision is recorded:
+
+1. **Link the board token to a company.** The API exposes no company domain
+   or registry id, so identity is operator-declared and nothing is inferred:
+
+   ```sql
+   insert into public.discovery_record
+     (company_id, source_key, source_record_id, collection_method,
+      retrieval_status, query_text, note)
+   values ('<company-uuid>', 'greenhouse-job-board', '<board-token>',
+           'manual', 'ok', '<board-token>', 'operator-declared board-token link');
+   ```
+
+   The board token is the path segment of the employer's careers page:
+   `https://job-boards.greenhouse.io/<board-token>/jobs` → `<board-token>`.
+   Re-linking a token to a different company is refused (409); resolve
+   identity manually instead.
+
+2. **Enable the source** (`update public.source set enabled = true where key
+   = 'greenhouse-job-board'`) — only after step 0.
+
+3. **Run one board:** call `runSignalSource(pool, getProductionRegistry(),
+   { adapterId: 'greenhouse-job-board', queryText: '<board-token>', actor,
+   limit, maxPages })`. It is a one-shot operator action; there is no
+   scheduler and no background worker.
+
+Expected outcomes: an unlinked token returns `unresolved` and writes nothing;
+a disabled source returns `source_disabled` before any write; a repeat run
+reports `duplicates` and writes nothing; a posting the employer has since
+edited is reported as `amended` and appended to the evidence ledger (the
+ledger is append-only — the prior observation is never silently rewritten).
+
+Postings become `hiring` claims with reliability `B` / credibility `2`,
+`published_at` from the source's `first_published` and `observed_at` from its
+`updated_at` — both left NULL when the source states neither. A posting is
+evidence of an open requisition only, never of intent to subcontract.
+
+## 2f. Directory, filters and export
+
+- `/agencies` — server-side search (`q` matches id, name, domain, country,
+  registry id; `%` and `_` are literals), plus `country`, `agencyType`,
+  `status`, `perPage`, `sort` and `dir`. Pagination is real: the count in the
+  heading is the SQL count, not the length of a fetched page. Sort keys are a
+  closed allowlist; anything else falls back to `created_at`.
+- **Workflow state vs verdict.** `candidate / resolved / qualified / rejected /
+  archived` on a company is lifecycle. A qualification verdict lives on a
+  qualification case (`/qualification/cases/<id>`). Do not read the company
+  badge as a verdict.
+- **Evidence columns.** `evidence_count` is the number of distinct observation
+  snapshots; `latest_source_key` / `latest_evidence_at` attribute the newest
+  one. A company showing `none` has **no provenance** — that is missing
+  information, not a clean record.
+- **Export** — `GET /api/export` with the same query parameters as the page
+  plus `format=csv|json`. Requires an operator session (401 otherwise). The
+  export is built from the same SQL builder as the screen, so it cannot drift
+  from what you were looking at.
+  - Columns are stable and documented in `lib/export/csv.ts`; their meaning
+    travels with the JSON export (`columns[].semantics`).
+  - `discovery_status` in an export is explicitly a WORKFLOW state, not a
+    qualification verdict.
+  - CSV is RFC 4180 with CRLF and a UTF-8 BOM. Fields containing quotes,
+    commas or newlines are quoted and inner quotes doubled.
+  - **Cells beginning `=`, `+`, `-`, `@`, TAB or CR are prefixed with `'`** so a
+    spreadsheet treats them as text instead of executing them. That applies to
+    every column, because company names and pasted claim text are untrusted.
+  - Exports contain company fields and evidence attribution only — no claim
+    text, no raw payloads, no credentials, no personal contacts.
+  - Capped at 500 rows. When the cap trims the result the response sets
+    `X-Export-Capped: true` and JSON returns `truncated: true`. Narrow the
+    filters; the truncation is never silent.
+
+## 2g. Pilot report (measurement, not projection)
+
+`/pilot` reports observed counts over the current database. Read it with the
+caveats it prints:
+
+- Every metric shows its own denominator and an explicit caveat. A share is
+  printed only when the denominator is non-zero.
+- **Precision is withheld below 30 reviewed labels** and reported as
+  "not reported" rather than as 0% or 100%. With no reviewed labels it is
+  `null` by design — signal counts are not a proxy for quality.
+- "Candidates approved for review" is **structurally zero while no active
+  policy exists**, because assessment is refused with `409
+  no_active_reference`. That is a blocked workflow, not a measured outcome, and
+  the page labels it as such.
+- A disabled source is refused *before* a run row exists, so "no runs" is never
+  evidence of failure.
+- If the page says INCONCLUSIVE, it is because the sample is too small to mean
+  anything yet. Do not work around it by generating records.
+
 ## 3. Backups & recovery
 
 Full procedure: `docs/DATABASE_BACKUP_RESTORE.md`. Short version:

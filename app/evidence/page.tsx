@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { getClaims } from "@/lib/dashboard/queries";
+import { getPool } from "@/lib/intake/db";
 import { PageHeader } from "@/components/page-header";
 import { Alert, Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SimpleTable } from "@/components/data-table";
+import { ObservationForm } from "@/components/evidence/observation-form";
 import { cn } from "@/lib/utils";
 import { requireOperatorPage } from "@/lib/auth/guard";
 
@@ -23,13 +25,18 @@ const tone: Record<string, "info" | "success" | "warning" | "danger" | "default"
 export default async function EvidencePage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; companyId?: string }>;
 }) {
   await requireOperatorPage("/evidence");
-  const { status } = await searchParams;
+  const { status, companyId } = await searchParams;
   let rows = null;
+  let enabledSources: string[] = [];
   try {
     rows = await getClaims(status);
+    const s = await getPool().query(
+      "select key from public.source where enabled = true order by key",
+    );
+    enabledSources = (s.rows as { key: string }[]).map((r) => r.key);
   } catch {
     return (
       <div className="space-y-4">
@@ -93,6 +100,12 @@ export default async function EvidencePage({
         recorded separately on every claim. Stale claims must be refreshed
         before hypotheses relying on them can validate.
       </Alert>
+      <Card>
+        <CardHeader><CardTitle>Record manual observation</CardTitle></CardHeader>
+        <CardContent>
+          <ObservationForm companyId={(companyId ?? "").slice(0, 36)} enabledSources={enabledSources} />
+        </CardContent>
+      </Card>
     </div>
   );
 }

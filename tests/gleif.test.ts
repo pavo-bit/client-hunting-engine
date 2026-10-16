@@ -33,9 +33,14 @@ function mockFetch(routes: Route[] | ((url: string, call: number) => Route)) {
     const u = String(url);
     seen.push(u);
     const r = typeof routes === "function" ? routes(u, calls) : routes[Math.min(calls - 1, routes.length - 1)];
+    // Default to a JSON content-type, which is what the real GLEIF API sends.
+    // Without this the Response constructor labels a string body `text/plain`,
+    // which the hardened transport (Phase 2) correctly refuses — the double was
+    // inaccurate, not the control.
+    const headers = { "content-type": "application/json", ...(r.headers ?? {}) };
     return new Response(
       r.json === undefined ? "not-json{{{" : JSON.stringify(r.json),
-      { status: r.status, headers: r.headers },
+      { status: r.status, headers },
     );
   };
   return { impl: impl as typeof fetch, calls: () => calls, seen: () => seen };
@@ -244,6 +249,8 @@ describe("discovery runs (persistence + identity handoff)", () => {
         void url;
         return new Response(JSON.stringify(pages[Math.min(n - 1, pages.length - 1)]), {
           status: 200,
+          // JSON content-type, matching the real GLEIF API (see mockFetch).
+          headers: { "content-type": "application/json" },
         });
       }) as typeof fetch,
     };

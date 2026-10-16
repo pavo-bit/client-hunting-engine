@@ -4,6 +4,7 @@
 
 import type { Pool } from "pg";
 import { observationHash } from "./hash";
+import { assertSourceEnabled } from "../discovery/sources";
 
 export interface IntakeError {
   status: number;
@@ -24,8 +25,18 @@ const PREDICATES = [
   "announced",
   "hiring",
   "contact",
+  "partnership",
+  "growth",
+  "service_request",
   "other",
 ] as const;
+// Signal-family mapping (Phase 1): hiring (agency hiring signals),
+// partnership (partnership/collaboration opportunity), growth (growth events:
+// funding, expansion, headcount), service_request (explicit request for
+// external development help). provides_service covers service-fit evidence;
+// announced covers general announcements. Predicates are a closed vocabulary
+// so downstream consumers can rely on them; free-text nuance stays in the
+// claim text, never in a new predicate without review.
 
 export interface IngestObservationInput {
   companyId: string;
@@ -44,6 +55,8 @@ export interface IngestClaimInput {
   reliability: "A" | "B" | "C" | "D";
   credibility: number;
   expiresAt?: string;
+  /** Source publication/event date, when the source states one. Never defaulted. */
+  publishedAt?: string;
 }
 
 function checkUrl(url: string): void {
@@ -51,6 +64,51 @@ function checkUrl(url: string): void {
     throw fail(422, "bad_url", "observation URL must be http(s)");
   if (url.length > 2000) throw fail(422, "bad_url", "URL exceeds 2000 characters");
   if (/\s/.test(url)) throw fail(422, "bad_url", "URL must not contain whitespace");
+}
+
+/**
+ * Personal-contact tripwire (Phase 1 privacy guard). Operator-supplied free
+ * text must not smuggle in named decision-makers' personal emails or personal
+ * social profiles: the product collects public BUSINESS channels, never
+ * personal contact data.
+ *
+ * Documented heuristic, not a guarantee: role-based addresses (info@,
+ * contact@, …) always pass; single-token handles (john@) pass because they
+ * cannot be identified; multi-part personal shapes (firstname.lastname@)
+ * and linkedin.com/in/ profile paths are refused. A passed check does NOT
+ * prove the absence of personal data — it only blocks the recognizable
+ * shapes. Rejection messages never echo the matched address.
+ */
+const ROLE_PREFIXES = new Set([
+  "info", "contact", "hello", "support", "sales", "team", "help",
+  "service", "office", "general", "enquiries", "enquire", "press",
+  "media", "jobs", "careers", "mail",
+]);
+
+const EMAIL_LIKE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+
+function checkNoPersonalContact(field: "excerpt" | "claim text" | "url", value: string): void {
+  if (/(^|\/)linkedin\.com\/in\//i.test(value)) {
+    throw fail(422, "personal_profile", `${field} must not reference a personal social profile`);
+  }
+  EMAIL_LIKE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = EMAIL_LIKE.exec(value)) !== null) {
+    const local = m[0].slice(0, m[0].indexOf("@")).toLowerCase();
+    if (ROLE_PREFIXES.has(local)) continue;
+    const parts = local.split(/[._-]+/).filter((p) => p.length > 0);
+    const personal =
+      parts.length >= 2 &&
+      parts.every((p) => /^[a-z]+$/.test(p) && p.length >= 2) &&
+      !parts.every((p) => ROLE_PREFIXES.has(p));
+    if (personal) {
+      throw fail(
+        422,
+        "personal_contact",
+        `${field} appears to contain a personal email address, which this product does not collect; use a public business channel instead`,
+      );
+    }
+  }
 }
 
 export async function ingestObservation(
@@ -62,6 +120,8 @@ export async function ingestObservation(
   if (Buffer.byteLength(excerpt, "utf8") > 2000)
     throw fail(422, "excerpt_too_large", "excerpt exceeds 2000 bytes");
   checkUrl(obs.url);
+  checkNoPersonalContact("url", obs.url);
+  checkNoPersonalContact("excerpt", excerpt);
   const retention = obs.retentionClass ?? "page";
   if (!["registry", "directory", "page", "social", "manual"].includes(retention))
     throw fail(422, "bad_retention", "unknown retention class");
@@ -70,6 +130,7 @@ export async function ingestObservation(
   if (claim) {
     if (claimText.length === 0 || claimText.length > 2000)
       throw fail(422, "bad_claim", "claim text must be 1..2000 characters");
+    checkNoPersonalContact("claim text", claimText);
     if (claim.predicate !== undefined && !(PREDICATES as readonly string[]).includes(claim.predicate))
       throw fail(422, "bad_predicate", `predicate must be one of: ${PREDICATES.join(", ")}`);
     const st = claim.initialStatus ?? "observed";
@@ -82,6 +143,11 @@ export async function ingestObservation(
       throw fail(422, "bad_reliability", "reliability must be A-D");
     if (!Number.isInteger(claim.credibility) || claim.credibility < 1 || claim.credibility > 5)
       throw fail(422, "bad_credibility", "credibility must be 1-5");
+    if (claim.publishedAt !== undefined) {
+      const pub = new Date(claim.publishedAt);
+      if (Number.isNaN(pub.getTime()))
+        throw fail(422, "bad_published_at", "publishedAt must be an ISO timestamp when supplied");
+    }
   }
 
   const client = await pool.connect();
@@ -92,10 +158,16 @@ export async function ingestObservation(
       await client.query("rollback");
       throw fail(404, "company_not_found", "company not found");
     }
-    const so = await client.query("select key from public.source where key = $1", [obs.sourceKey]);
-    if (so.rows.length === 0) {
+    // The source permission gate is the SOLE authority: a disabled source
+    // stays blocked before any write (same fail-closed contract as discovery
+    // runs). assertSourceEnabled covers the unknown-source case with the same
+    // 422 unknown_source code the manual check used to produce, plus 409
+    // source_disabled for a registered-but-disabled source.
+    try {
+      await assertSourceEnabled(client, obs.sourceKey);
+    } catch (e: unknown) {
       await client.query("rollback");
-      throw fail(422, "unknown_source", "source key is not registered");
+      throw e;
     }
     const sha = observationHash(obs.url, excerpt);
     const existing = await client.query(
@@ -133,8 +205,8 @@ export async function ingestObservation(
       const r = await client.query(
         `insert into public.claim
            (company_id, snapshot_id, claim_text, claim_status, source_reliability,
-            info_credibility, observed_at, expires_at, predicate)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
+            info_credibility, observed_at, expires_at, predicate, published_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
         [
           obs.companyId,
           snapshotId,
@@ -145,6 +217,7 @@ export async function ingestObservation(
           obs.observedAt ?? null,
           claim.expiresAt ?? null,
           claim.predicate ?? null,
+          claim.publishedAt ?? null,
         ],
       );
       claimId = r.rows[0].id as string;
