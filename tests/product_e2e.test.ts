@@ -292,7 +292,7 @@ describe("journey 2: the automated source produces dated, attributed signals", (
     const second = await runSignalSource(pool, reg, {
       adapterId: GREENHOUSE_ADAPTER_ID, queryText: BOARD, actor: ACTOR, limit: 25,
     });
-    expect(second.counts).toMatchObject({ new: 0, duplicates: 3 });
+    expect(second.counts).toMatchObject({ new: 0, unchanged: 3 });
 
     const edited = JSON.parse(JSON.stringify(fixture("jobs-ok.json"))) as {
       jobs: Record<string, unknown>[];
@@ -301,7 +301,7 @@ describe("journey 2: the automated source produces dated, attributed signals", (
     const third = await runSignalSource(pool, registry(edited), {
       adapterId: GREENHOUSE_ADAPTER_ID, queryText: BOARD, actor: ACTOR, limit: 25,
     });
-    expect(third.counts.amended).toBe(1);
+    expect(third.counts.updated).toBe(1);
     // Append-only: the original observation is still readable.
     const detail = (await getCompanyDetail(pool, companyId))!;
     expect(detail.claims.length).toBe(4);
@@ -434,19 +434,26 @@ describe("journey 5: pilot metrics measure rather than flatter", () => {
       expect(m.definition.length).toBeGreaterThan(10);
       expect(m.caveat.length).toBeGreaterThan(10);
     }
-    // No reviewed labels exist, so precision must be null, not 0 or 100.
-    expect(report.precision.reviewedLabels).toBe(0);
-    expect(report.precision.precision).toBeNull();
-    expect(report.precision.basis).toMatch(/undefined/);
+    // No human review labels exist, so precision must be null, not 0 or 100.
+    expect(report.precision.reviewedRecords).toBe(0);
+    expect(report.precision.value).toBeNull();
+    expect(report.precision.basis).toMatch(/No human review labels/);
+    // Precision is NOT acceptance rate: with cases assessed under an active
+    // policy and accepted, precision would still be null here.
+    expect(report.precision.standard.met).toBe(false);
+    expect(report.precision.standard.requiredRecords).toBe(60);
+    expect(report.precision.standard.requiredRuns).toBe(4);
     // Blockers are explicit, not implied.
     expect(report.blockers.map((b) => b.code)).toContain("no_active_policy");
     expect(report.blockers.map((b) => b.code)).toContain("no_reviewed_labels");
     expect(report.inconclusive).toBe(true);
     expect(report.reasons.length).toBeGreaterThan(0);
-    // "Approved for review" is structurally zero, and says why.
-    const approved = report.metrics.find((m) => m.key === "approved_for_review")!;
-    expect(approved.value).toBe(0);
-    expect(approved.caveat).toMatch(/STRUCTURALLY ZERO/);
+    // "Approved for review" is UNAVAILABLE (not zero) while no policy is active.
+    expect(report.approvedForReview.value).toBeNull();
+    expect(report.approvedForReview.activePolicyVersion).toBeNull();
+    expect(report.approvedForReview.detail).toMatch(/UNAVAILABLE, not zero/);
+    // It is no longer a hardcoded metric entry.
+    expect(report.metrics.find((m) => m.key === "approved_for_review")).toBeUndefined();
   });
 
   it("a metric whose column is missing is reported unavailable, never as zero", async () => {
@@ -475,9 +482,18 @@ describe("journey 5: pilot metrics measure rather than flatter", () => {
     expect(gh).toBeDefined();
     // Shipped state is disabled; the test suite restores it.
     expect(gh.enabled).toBe(false);
-    expect(report.evidenceFreshness.snapshots).toBeGreaterThan(0);
-    expect(report.evidenceFreshness.withVerifiableUrl).toBeGreaterThan(0);
-    expect(report.evidenceFreshness.medianAgeDays).not.toBeNull();
+    // Source health never associates a run by matching query text.
+    for (const s of report.sourceHealth)
+      expect(s.lastRunBasis).toMatch(/adapter manifest's sourceKey|unavailable/);
+    // Freshness is measured from a defined population, and is not "age of the
+    // newest row" mislabelled as a median.
+    expect(report.freshness.observationSample).toBeGreaterThanOrEqual(0);
+    expect(report.freshness.medianIngestionAgeDays).not.toBeNull();
+    expect(report.freshness.ingestionSample).toBeGreaterThan(0);
+    // Observation age has an explicit sample; a zero sample yields null, never 0.
+    if (report.freshness.observationSample === 0)
+      expect(report.freshness.medianObservationAgeDays).toBeNull();
+    else expect(report.freshness.medianObservationAgeDays).not.toBeNull();
     expect(MIN_SAMPLE_FOR_PRECISION).toBeGreaterThan(0);
   });
 });

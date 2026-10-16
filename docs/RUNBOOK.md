@@ -130,35 +130,52 @@ needs no licence.
 
 For the record, once (and only once) that decision is recorded:
 
-1. **Link the board token to a company.** The API exposes no company domain
-   or registry id, so identity is operator-declared and nothing is inferred:
+**Step 0 — approve the source (blocking gate).** Nothing below may start
+until the licensing decision in `docs/P2_SOURCE_SELECTION.md` §5 is recorded and
+dated by the owner.
 
-   ```sql
-   insert into public.discovery_record
-     (company_id, source_key, source_record_id, collection_method,
-      retrieval_status, query_text, note)
-   values ('<company-uuid>', 'greenhouse-job-board', '<board-token>',
-           'manual', 'ok', '<board-token>', 'operator-declared board-token link');
-   ```
+**Step 1 — link the board token to a company.** The API exposes no company
+domain or registry id, so identity is operator-declared and nothing is inferred.
+Use the audited `linkBoardToken` helper — it is the same code path the tests
+exercise, and it refuses to re-point a token at another company:
 
-   The board token is the path segment of the employer's careers page:
-   `https://job-boards.greenhouse.io/<board-token>/jobs` → `<board-token>`.
-   Re-linking a token to a different company is refused (409); resolve
-   identity manually instead.
+```ts
+// one-shot operator action
+import { getPool } from "@/lib/intake/db";
+import { linkBoardToken } from "@/lib/discovery/signal-run";
+await linkBoardToken(getPool(), {
+  companyId: "<company-uuid>",
+  boardToken: "<board-token>",
+  actor: "<operator>",
+});
+```
 
-2. **Enable the source** (`update public.source set enabled = true where key
-   = 'greenhouse-job-board'`) — only after step 0.
+The board token is the path segment of the employer's careers page:
+`https://job-boards.greenhouse.io/<board-token>/jobs` → `<board-token>`.
+Re-linking a token to a different company is refused (409
+`board_token_conflict`); resolve identity manually instead. **Do not insert the
+link row by hand** — the helper additionally refuses a missing company (404)
+and writes the audit row that records who declared the link.
 
-3. **Run one board:** call `runSignalSource(pool, getProductionRegistry(),
-   { adapterId: 'greenhouse-job-board', queryText: '<board-token>', actor,
-   limit, maxPages })`. It is a one-shot operator action; there is no
-   scheduler and no background worker.
+**Step 2 — enable the source:**
+`update public.source set enabled = true where key = 'greenhouse-job-board'`
+— only after step 0.
 
-Expected outcomes: an unlinked token returns `unresolved` and writes nothing;
-a disabled source returns `source_disabled` before any write; a repeat run
-reports `duplicates` and writes nothing; a posting the employer has since
-edited is reported as `amended` and appended to the evidence ledger (the
-ledger is append-only — the prior observation is never silently rewritten).
+**Step 3 — run one board:** call `runSignalSource(pool, getProductionRegistry(),
+{ adapterId: 'greenhouse-job-board', queryText: '<board-token>', actor, limit,
+maxPages })`. It is a one-shot operator action; there is no scheduler and no
+background worker.
+
+Expected outcomes: an unlinked token returns `unresolved` and writes nothing —
+and does not even contact the source, because identity is resolved before the
+fetch; a disabled source returns `source_disabled` before any write; an
+unchanged posting is reported as `unchanged` and writes nothing; a posting the
+employer has since **edited** is reported as `updated` — a new snapshot is
+appended to the append-only ledger and the **previous claim is superseded**,
+so an edited requisition never leaves two independently active hiring signals.
+Human-promoted claims (verified / corroborated / disputed / withdrawn) are never
+auto-superseded. Postings that vanish from a board are **not** recorded as
+closures.
 
 Postings become `hiring` claims with reliability `B` / credibility `2`,
 `published_at` from the source's `first_published` and `observed_at` from its
@@ -217,6 +234,32 @@ caveats it prints:
   evidence of failure.
 - If the page says INCONCLUSIVE, it is because the sample is too small to mean
   anything yet. Do not work around it by generating records.
+
+### What each pilot figure means (and what it is not)
+
+| Figure | Definition | Never |
+|---|---|---|
+| Distinct canonical companies | Rows not merged into another record | A claim that identity resolution is correct |
+| Source records surviving dedup | `discovery_record` rows carrying a content hash | A quality measure |
+| Unresolved identities | Pending identity conflicts + pending duplicate candidates | Zero means "none raised", not "all correct" |
+| **Approved for review** | Cases whose LATEST decision is `accepted`, whose LATEST assessment used the **active policy version**, case state `assessed`, opportunity not suppressed | **Not** zero when no policy is active — it is reported *unavailable*, because assessment is refused (`409 no_active_reference`) |
+| **Precision** | `correct / (correct + incorrect)` over `public.source_record_review`, latest label per record, per source, with a 95% Wilson interval | **Not** an acceptance rate, not derived from a score or a policy verdict; unreviewed records are never assumed correct |
+| Median evidence age | True median over snapshots carrying a valid `observed_at` | Not the age of the newest row; not substituted with ingestion time |
+| Median ingestion age | Median over `fetched_at` | Never merged with observation or publication age |
+| Median publication age | Median over `claim.published_at` | Never filled from ingestion time when the source stated no date |
+| Source run failure rate | Failed/cancelled runs over all runs | Excludes pre-run refusals (disabled source), which create no run row |
+| Last run per source | Resolved from `discovery_run.adapter_id` via the adapter manifest's `sourceKey` | **Never** matched by comparing `query_text` to a source key |
+
+**Pilot standard (owner-agreed):** a formal conclusion requires **≥60 reviewed
+eligible records across ≥4 discovery runs**, *and* satisfaction of the agreed
+confidence-bound acceptance criterion. Reaching the count alone proves nothing
+about precision.
+
+**Schema-version honesty:** the page reports a metric as *unavailable — with
+the migration named* when the database predates it, rather than showing zero.
+Known cases: `claim.published_at` (migration `20261016100001`) and
+`source_record_review` (migration `20261016120001`). Applying them to the
+developer database is a separate, explicitly approved step.
 
 ## 3. Backups & recovery
 

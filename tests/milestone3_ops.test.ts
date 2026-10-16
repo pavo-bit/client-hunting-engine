@@ -1,15 +1,15 @@
-﻿/**
+/**
  * MILESTONE 3 ops tests (local Docker PostgreSQL only, loopback guard).
  *
  * Covers: health-endpoint shape + privacy, decision-log redaction, middleware
  * redaction-by-construction (static) + matcher, boot validation fail-closed,
  * and the REAL backup workflow end to end (backup -> verify -> restore into
  * scratch -> refusal paths -> artifact cleanup). The backup test shells out
- * to scripts/backup.mjs against the real container: slow (~15s) but honest â€”
+ * to scripts/backup.mjs against the real container: slow (~15s) but honest —
  * it exercises docker exec, pg_dump/pg_restore, manifests, and scratch
  * lifecycle, not mocks of them.
  */
-import { execFileSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 import { existsSync, readFileSync, readdirSync, rmSync } from "fs";
 import { join } from "path";
 import { Pool } from "pg";
@@ -144,7 +144,44 @@ describe("backup workflow end to end (real container, scratch targets)", () => {
   const dbName = new URL(DB_URL).pathname.replace(/^\//, "");
   const prefix = `${dbName}-`;
 
-  it("backs up, verifies, and restores with integrity", async () => {
+  // EXPLICIT PREREQUISITE (Phase 4 / A3).
+  //
+  // The real workflow shells into a PostgreSQL container, so it can only run
+  // where that infrastructure exists. Previously the container name was an
+  // implicit assumption (`grayscales-pg`), so the suite failed obscurely on a
+  // host without that container and could silently be meaningless in CI,
+  // where the postgres service container has no such name.
+  //
+  // The name is now configuration (BACKUP_CONTAINER, defaulting to the
+  // project's compose name), and the check below is about INFRASTRUCTURE ONLY:
+  // no docker CLI, or no running container of that name. If the infrastructure
+  // is present the tests run and may still fail on a real defect — a genuine
+  // failure is never converted into a skip.
+  const container = process.env.BACKUP_CONTAINER ?? "grayscales-pg";
+  const prereq = ((): { ok: boolean; reason: string } => {
+    const which = spawnSync("docker", ["--version"], { encoding: "utf8" });
+    if (which.error || which.status !== 0)
+      return { ok: false, reason: "docker CLI is not available on this host" };
+    const inspect = spawnSync(
+      "docker",
+      ["inspect", "-f", "{{.State.Running}}", container],
+      { encoding: "utf8" },
+    );
+    if (inspect.error || inspect.status !== 0)
+      return {
+        ok: false,
+        reason: `container '${container}' is not present (start it, or set BACKUP_CONTAINER)`,
+      };
+    if (inspect.stdout.trim() !== "true")
+      return { ok: false, reason: `container '${container}' exists but is not running` };
+    return { ok: true, reason: "docker and the configured container are available" };
+  })();
+
+  if (!prereq.ok)
+    console.warn(`[milestone3_ops] backup/restore tests SKIPPED: ${prereq.reason}`);
+  const itWithInfra = prereq.ok ? it : it.skip;
+
+  itWithInfra("backs up, verifies, and restores with integrity", async () => {
     const b = backup(["backup", "--target=test"]);
     expect(b.ok, b.out).toBe(true);
     expect(b.out).toContain("backup ok:");
@@ -182,7 +219,7 @@ describe("backup workflow end to end (real container, scratch targets)", () => {
     }
   }, 300000);
 
-  it("refuses invalid artifacts, protected names, and existing targets", async () => {
+  itWithInfra("refuses invalid artifacts, protected names, and existing targets", async () => {
     const bad = backup(["verify", join(ROOT, "tests", "fixtures", "gleif", "search-ok.json")]);
     expect(bad.ok).toBe(false);
     const badRestore = backup(["restore", join(ROOT, "tests", "fixtures", "gleif", "search-ok.json"), "--scratch", "agency_intel_restore_m3bad"]);
@@ -208,3 +245,4 @@ describe("backup workflow end to end (real container, scratch targets)", () => {
     expect(leftovers).toEqual([]);
   });
 });
+

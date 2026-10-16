@@ -36,9 +36,12 @@ export const SIGNAL_SOURCE_KEY = "greenhouse-job-board";
 const RUN_TIMEOUT_MS = 120_000;
 
 export type SignalItemStatus =
+  /** First time this posting was seen. */
   | "new"
-  | "amended"
-  | "duplicate"
+  /** Same posting, content changed: a new version superseded the previous one. */
+  | "updated"
+  /** Same posting, content identical: nothing written. */
+  | "unchanged"
   | "unresolved"
   | "skipped"
   | "invalid"
@@ -56,8 +59,8 @@ export interface SignalItemResult {
 export interface SignalRunCounts {
   found: number;
   new: number;
-  amended: number;
-  duplicates: number;
+  updated: number;
+  unchanged: number;
   unresolved: number;
   skipped: number;
   failed: number;
@@ -184,7 +187,7 @@ export async function runSignalSource(
   const limit = Math.min(Math.max(opts.limit ?? 10, 1), 100);
   const maxPages = Math.min(Math.max(opts.maxPages ?? 3, 1), 3);
   const counts: SignalRunCounts = {
-    found: 0, new: 0, amended: 0, duplicates: 0, unresolved: 0, skipped: 0, failed: 0,
+    found: 0, new: 0, updated: 0, unchanged: 0, unresolved: 0, skipped: 0, failed: 0,
   };
   const items: SignalItemResult[] = [];
   const fail = (status: SignalRunResult["status"], error: string, runId: string | null = null): SignalRunResult => ({
@@ -240,7 +243,7 @@ export async function runSignalSource(
          found = $3, created_new = $4, duplicates = $5, skipped = $6,
          conflicts = $7, failed_items = $8, error = $9 where id = $1`,
       [
-        runId, persisted, counts.found, counts.new, counts.duplicates, counts.skipped,
+        runId, persisted, counts.found, counts.new, counts.unchanged, counts.skipped,
         counts.unresolved, counts.failed, error,
       ],
     );
@@ -317,11 +320,11 @@ export async function runSignalSource(
        where source_key = $1 and source_record_id = $2 limit 1`,
       [sourceKey, sid],
     );
-    const isAmendment = seen.rows.length > 0 && seen.rows[0].note !== `sha256:${sha}`;
-    if (seen.rows.length > 0 && !isAmendment) {
-      counts.duplicates += 1;
+    const isUpdate = seen.rows.length > 0 && seen.rows[0].note !== `sha256:${sha}`;
+    if (seen.rows.length > 0 && !isUpdate) {
+      counts.unchanged += 1;
       items.push({
-        sourceRecordId: sid, status: "duplicate", companyId, claimId: null,
+        sourceRecordId: sid, status: "unchanged", companyId, claimId: null,
         warnings: [], note: "source record already ingested with identical content",
       });
       return;
@@ -358,7 +361,7 @@ export async function runSignalSource(
         },
       );
 
-      if (isAmendment) {
+      if (isUpdate) {
         // Target by primary key (already read above) so every parameter is
         // referenced; an unused placeholder would leave Postgres unable to
         // infer its type.
@@ -369,15 +372,56 @@ export async function runSignalSource(
            where id = $1`,
           [seen.rows[0].id, signal.canonicalUrl, token, `sha256:${sha}`],
         );
+        // SUPERSEDE the previous version of THIS posting.
+        //
+        // The snapshot itself is never destroyed — the ledger stays
+        // append-only and the old observation remains readable. What changes is
+        // the CLAIM's lifecycle state, so an edited posting cannot leave two
+        // independently countable active hiring signals.
+        //
+        // Scope is deliberately narrow: the same source, the same canonical
+        // posting URL, the same `hiring` predicate, and only claims still in
+        // `observed`. A human-promoted claim (verified / corroborated /
+        // disputed / withdrawn) carries a judgement the system must not
+        // overwrite, so it is never auto-superseded.
+        const superseded = await pool.query(
+          `update public.claim c
+              set claim_status = 'superseded'
+             from public.snapshot s
+            where s.id = c.snapshot_id
+              and c.id <> $3
+              and s.source_key = $1
+              and s.url = $2
+              and c.predicate = 'hiring'
+              and c.claim_status = 'observed'
+          returning c.id`,
+          [sourceKey, signal.canonicalUrl, obs.claimId ?? "00000000-0000-0000-0000-000000000000"],
+        );
+        for (const row of superseded.rows as { id: string }[]) {
+          await pool.query(
+            `insert into public.audit_log (entity_type, entity_id, actor, transition_from, transition_to, reason)
+             values ('claim', $1, $2, 'observed', 'superseded', $3)`,
+            [
+              row.id,
+              opts.actor,
+              `posting ${sid} re-observed with changed content; earlier version superseded (snapshot retained)`,
+            ],
+          );
+        }
         await pool.query(
           `insert into public.audit_log (entity_type, entity_id, actor, transition_from, transition_to, reason)
            values ('discovery_record', $1, $2, 'observed', 'amended', $3)`,
           [seen.rows[0].id, opts.actor, `source content changed for ${sid}; evidence ledger appended`],
         );
-        counts.amended += 1;
+        counts.updated += 1;
         items.push({
-          sourceRecordId: sid, status: "amended", companyId, claimId: obs.claimId,
-          warnings: signal.warnings, note: "content changed since last run; appended as a new observation",
+          sourceRecordId: sid, status: "updated", companyId, claimId: obs.claimId,
+          warnings: signal.warnings,
+          note:
+            `content changed since last run; appended as a new observation` +
+            (superseded.rows.length > 0
+              ? ` and ${superseded.rows.length} earlier version(s) superseded`
+              : ""),
         });
         return;
       }
@@ -403,10 +447,10 @@ export async function runSignalSource(
       if (!inserted || obs.existed) {
         // The ledger already held this exact observation (it was recorded
         // manually first, or a concurrent run won the race). Nothing
-        // duplicated; reported honestly as a duplicate.
-        counts.duplicates += 1;
+        // duplicated; reported honestly.
+        counts.unchanged += 1;
         items.push({
-          sourceRecordId: sid, status: "duplicate", companyId, claimId: obs.claimId,
+          sourceRecordId: sid, status: "unchanged", companyId, claimId: obs.claimId,
           warnings: signal.warnings,
           note: obs.existed
             ? "observation already existed in the evidence ledger"

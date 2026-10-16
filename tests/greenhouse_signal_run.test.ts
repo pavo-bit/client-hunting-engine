@@ -195,7 +195,7 @@ describe("a permitted run normalizes postings into the evidence workflow", () =>
     });
     expect(result.status).toBe("ok");
     expect(result.companyId).toBe(companyId);
-    expect(result.counts).toMatchObject({ found: 3, new: 3, duplicates: 0, failed: 0 });
+    expect(result.counts).toMatchObject({ found: 3, new: 3, unchanged: 0, failed: 0 });
     expect(result.items.map((i) => i.sourceRecordId).sort()).toEqual([
       "greenhouse:8126988", "greenhouse:8126989", "greenhouse:8126990",
     ]);
@@ -280,8 +280,8 @@ describe("a permitted run normalizes postings into the evidence workflow", () =>
       adapterId: GREENHOUSE_ADAPTER_ID, queryText: BOARD, actor: ACTOR, limit: 25,
     });
     expect(second.status).toBe("ok");
-    expect(second.counts).toMatchObject({ found: 3, new: 0, duplicates: 3, failed: 0 });
-    expect(second.items.every((i) => i.status === "duplicate")).toBe(true);
+    expect(second.counts).toMatchObject({ found: 3, new: 0, unchanged: 3, failed: 0 });
+    expect(second.items.every((i) => i.status === "unchanged")).toBe(true);
     const snapAfterSecond = await pool.query(
       "select count(*)::int n from public.snapshot where company_id = $1", [companyId],
     );
@@ -306,8 +306,8 @@ describe("a permitted run normalizes postings into the evidence workflow", () =>
     const result = await runSignalSource(pool, registryWith(after), {
       adapterId: GREENHOUSE_ADAPTER_ID, queryText: BOARD, actor: ACTOR, limit: 25,
     });
-    expect(result.counts).toMatchObject({ new: 0, amended: 1, duplicates: 2 });
-    const amended = result.items.find((i) => i.status === "amended")!;
+    expect(result.counts).toMatchObject({ new: 0, updated: 1, unchanged: 2 });
+    const amended = result.items.find((i) => i.status === "updated")!;
     expect(amended.sourceRecordId).toBe("greenhouse:8126988");
     expect(amended.note).toMatch(/appended as a new observation/);
 
@@ -340,7 +340,7 @@ describe("a permitted run normalizes postings into the evidence workflow", () =>
     const third = await runSignalSource(pool, registryWith(after), {
       adapterId: GREENHOUSE_ADAPTER_ID, queryText: BOARD, actor: ACTOR, limit: 25,
     });
-    expect(third.counts).toMatchObject({ new: 0, amended: 0, duplicates: 3 });
+    expect(third.counts).toMatchObject({ new: 0, updated: 0, unchanged: 3 });
   });
 
   it("an empty board yields an empty run, not fabricated records", async () => {

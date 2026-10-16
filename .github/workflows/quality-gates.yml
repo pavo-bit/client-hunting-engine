@@ -20,27 +20,29 @@ on:
 jobs:
   gates:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    services:
-      postgres:
-        image: postgres:17.11
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: agency_intel_ci
-        ports:
-          - 127.0.0.1:5434:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d agency_intel_ci"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 12
+    timeout-minutes: 40
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5434/agency_intel_ci
       TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5434/agency_intel_ci
       TEST_NOACCESS_URL: postgresql://noaccess:noaccess-local-only@127.0.0.1:5434/agency_intel_ci
+      # Phase 4 / A2: the Phase 2 principal URL is now declared EXPLICITLY.
+      # It previously fell back to a hardcoded `agency_intel_test`, which does
+      # not exist in this job, so the permission suites silently targeted the
+      # wrong (or no) database. One isolated CI database supports the whole suite.
+      TEST_P2_URL: postgresql://p2_app:p2-app-local-only@127.0.0.1:5434/agency_intel_ci
       APP_NOACCESS_USER: noaccess
       APP_NOACCESS_PASSWORD: noaccess-local-only
+      APP_P2_USER: p2_app
+      APP_P2_PASSWORD: p2-app-local-only
+      # Phase 4 / A3: the backup workflow shells into a container, so CI now
+      # provisions the project's OWN compose stack (step below) and names it.
+      # A GitHub `services:` container has no such name, which is why the
+      # backup/restore suite could not run here before.
+      BACKUP_CONTAINER: grayscales-pg
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agency_intel_ci
+      POSTGRES_PORT: "5434"
       OPERATOR_EMAIL: ci-operator@example.com
       # Plain $ separators here (NOT \$ escaped): GitHub Actions passes env
       # values literally, while Next.js expands $VAR only inside .env FILES.
@@ -59,6 +61,8 @@ jobs:
           cache: npm
       - name: Install from lockfile
         run: npm ci
+      - name: Start PostgreSQL via the project compose stack
+        run: docker compose up -d --wait
       - name: Type check
         run: npx tsc --noEmit
       - name: Bootstrap scratch database (creates DB + noaccess role)
@@ -75,3 +79,8 @@ jobs:
         run: npx vitest run
       - name: Production build
         run: npm run build
+      - name: Dump PostgreSQL logs if the job failed
+        if: failure()
+        # Container logs never contain connection passwords (PGPASSWORD is
+        # passed via exec env only), so this is safe to print.
+        run: docker logs --tail 200 grayscales-pg || true

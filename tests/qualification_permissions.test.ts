@@ -18,19 +18,16 @@
  */
 import { Client, Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { resolveTestDatabases } from "./helpers/test-db";
 import { createCompany } from "../lib/intake/import";
 import { registerOpportunity } from "../lib/discovery/opportunities";
 
-const DB_URL =
-  process.env.TEST_DATABASE_URL ?? "postgresql://postgres:postgres@127.0.0.1:5434/agency_intel_test";
-if (!/127\.0\.0\.1|localhost/.test(new URL(DB_URL).hostname)) {
-  throw new Error("refusing non-local database");
-}
-const P2_URL =
-  process.env.TEST_P2_URL ?? "postgresql://p2_app:p2-app-local-only@127.0.0.1:5434/agency_intel_test";
-const NOACCESS_URL =
-  process.env.TEST_NOACCESS_URL ??
-  "postgresql://noaccess:noaccess-local-only@127.0.0.1:5434/agency_intel_test";
+const DBS = resolveTestDatabases(process.env, {
+  test: "postgresql://postgres:postgres@127.0.0.1:5434/agency_intel_test",
+});
+const DB_URL = DBS.testDatabaseUrl;
+const P2_URL = DBS.p2Url;
+const NOACCESS_URL = DBS.noAccessUrl;
 const pool = new Pool({ connectionString: DB_URL, max: 4 });
 const ACTOR = "p1p";
 
